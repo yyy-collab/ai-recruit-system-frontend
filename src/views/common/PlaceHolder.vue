@@ -6,10 +6,10 @@
 
 <style scoped>
 .placeholder {
+  min-height: 100vh;
   display: flex;
-  justify-content: center;
   align-items: center;
-  height: 100%;
-  min-height: 400px;
+  justify-content: center;
+  background: #f6f7fb;
 }
 </style>
