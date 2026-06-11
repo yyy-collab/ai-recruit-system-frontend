@@ -2,17 +2,20 @@
   <div class="message-container">
     <div class="page-header">
       <h2 class="page-title">我的消息</h2>
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜索企业名称或岗位"
-        clearable
-        class="search-input"
-        @input="handleSearch"
-      >
-        <template #prefix>
-          <el-icon><Search /></el-icon>
-        </template>
-      </el-input>
+      <div class="search-wrapper">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索企业名称或岗位"
+          clearable
+          class="search-input"
+          @keyup.enter="handleSearch"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-button type="primary" @click="handleSearch" style="margin-left: 10px;">搜索</el-button>
+      </div>
     </div>
 
     <div class="filter-bar">
@@ -31,16 +34,23 @@
         class="message-item"
         @click="showDetail(item.message_id)"
       >
-        <div class="message-header">
-          <span class="company-name">{{ item.company_name }}</span>
-          <el-tag :type="getStatusTagType(item.status)">
-            {{ getStatusText(item.status) }}
-          </el-tag>
+        <div class="avatar-wrapper">
+          <el-avatar :size="48" :src="item.avatar_url || defaultAvatar">
+            {{ getInitials(item.company_name || item.hr_name) }}
+          </el-avatar>
         </div>
-        <div class="message-body">
-          <div>岗位：{{ item.job_name }}</div>
-          <div class="message-desc">面试时间：{{ item.interview_date }} {{ item.interview_time }}</div>
-          <div class="message-time">{{ formatTime(item.create_time) }}</div>
+        <div class="message-content">
+          <div class="message-header">
+            <span class="company-name">{{ item.company_name || item.hr_name }}</span>
+            <el-tag :type="getStatusTagType(item.status)">
+              {{ getStatusText(item.status) }}
+            </el-tag>
+          </div>
+          <div class="message-body">
+            <div>岗位：{{ item.job_name }}</div>
+            <div class="message-desc">面试时间：{{ item.interview_date }} {{ item.interview_time }}</div>
+            <div class="message-time">{{ formatTime(item.create_time) }}</div>
+          </div>
         </div>
       </div>
       <el-empty v-if="(!displayList || displayList.length === 0) && !loading" description="暂无消息" />
@@ -78,7 +88,15 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 const detailVisible = ref(false)
 const currentMessageId = ref(null)
+const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'
 
+// 获取首字母（用于头像占位）
+const getInitials = (name) => {
+  if (!name) return 'U'
+  return name.charAt(0).toUpperCase()
+}
+
+// 状态文本映射
 const getStatusText = (status) => {
   if (status === 0) return '待确认'
   if (status === 1) return '已接受'
@@ -86,6 +104,7 @@ const getStatusText = (status) => {
   return '未知'
 }
 
+// 前端过滤后的列表
 const filteredList = computed(() => {
   let list = rawList.value
   if (statusFilter.value !== '') {
@@ -101,14 +120,14 @@ const filteredList = computed(() => {
   return list
 })
 
+const total = computed(() => filteredList.value.length)
 const displayList = computed(() => {
   const start = (pageNum.value - 1) * pageSize.value
   const end = start + pageSize.value
   return filteredList.value.slice(start, end)
 })
 
-const total = computed(() => filteredList.value.length)
-
+// 获取消息列表（一次性获取所有，前端分页过滤）
 const fetchList = async () => {
   loading.value = true
   try {
@@ -135,25 +154,29 @@ const showDetail = (messageId) => {
   currentMessageId.value = messageId
   detailVisible.value = true
 }
+
 const getStatusTagType = (status) => {
   if (status === 0) return 'warning'
   if (status === 1) return 'success'
   if (status === 2) return 'danger'
   return 'info'
 }
+
 const formatTime = (time) => {
   if (!time) return ''
   return time.replace('T', ' ').substring(0, 16)
 }
-onMounted(() => { fetchList() })
+
+onMounted(() => {
+  fetchList()
+})
 </script>
 
 <style scoped>
-/* 样式不变，保持卡片外观 */
 .message-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 40px;
+  padding: 50px 40px 30px;
 }
 .page-header {
   display: flex;
@@ -166,20 +189,26 @@ onMounted(() => { fetchList() })
   font-weight: 600;
   margin: 0;
 }
+.search-wrapper {
+  display: flex;
+  align-items: center;
+}
 .search-input {
   width: 260px;
 }
 .filter-bar {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   text-align: center;
 }
 .message-list {
   min-height: 400px;
 }
 .message-item {
+  display: flex;
+  gap: 16px;
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
   padding: 16px;
   margin-bottom: 16px;
   cursor: pointer;
@@ -188,13 +217,20 @@ onMounted(() => { fetchList() })
 }
 .message-item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+.avatar-wrapper {
+  flex-shrink: 0;
+}
+.message-content {
+  flex: 1;
+  overflow: hidden;
 }
 .message-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .company-name {
   font-size: 16px;
@@ -206,7 +242,7 @@ onMounted(() => { fetchList() })
   font-size: 14px;
 }
 .message-desc {
-  margin: 8px 0;
+  margin: 6px 0;
   color: #666;
 }
 .message-time {
@@ -215,7 +251,28 @@ onMounted(() => { fetchList() })
   text-align: right;
 }
 .pagination {
-  margin-top: 10px;
+  margin-top: 150px;
   text-align: center;
+}
+
+/* 主题色覆盖 */
+:deep(.el-button--primary) {
+  background-color: #4F46E5;
+  border-color: #4F46E5;
+}
+:deep(.el-button--primary:hover) {
+  background-color: #4338ca;
+  border-color: #4338ca;
+}
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px #4F46E5 inset !important;
+}
+:deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background-color: #4F46E5;
+  border-color: #4F46E5;
+  box-shadow: -1px 0 0 0 #4F46E5;
+}
+:deep(.el-radio-button__inner:hover) {
+  color: #4F46E5;
 }
 </style>
