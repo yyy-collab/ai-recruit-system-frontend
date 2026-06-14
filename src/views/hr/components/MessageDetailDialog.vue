@@ -13,8 +13,8 @@
       <el-descriptions-item label="面试日期">{{ detail.interview_info?.interview_date }}</el-descriptions-item>
       <el-descriptions-item label="面试时段">{{ detail.interview_info?.interview_time }}</el-descriptions-item>
       <el-descriptions-item label="面试地点/链接">{{ detail.interview_info?.interview_address }}</el-descriptions-item>
-      <el-descriptions-item label="联系人">{{ detail.hr_info?.contact_name || detail.contact_name }}</el-descriptions-item>
-      <el-descriptions-item label="联系电话">{{ detail.hr_info?.contact_phone || detail.contact_phone }}</el-descriptions-item>
+      <el-descriptions-item label="联系人">{{ contactName }}</el-descriptions-item>
+      <el-descriptions-item label="联系电话">{{ contactPhone }}</el-descriptions-item>
       <el-descriptions-item label="备注">{{ detail.interview_info?.remark || '无' }}</el-descriptions-item>
       <el-descriptions-item label="当前状态">
         <el-tag :type="getStatusType(detail.status)">
@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { getHrMessageDetail } from '@/api/modules/interview'
 import { ElMessage } from 'element-plus'
 
@@ -35,6 +35,20 @@ const props = defineProps({ modelValue: Boolean, messageId: Number })
 const emit = defineEmits(['update:modelValue', 'refresh'])
 const visible = ref(false)
 const detail = ref({})
+
+const contactName = computed(() => (
+  detail.value?.interview_info?.contact_name
+  || detail.value?.hr_info?.contact_name
+  || detail.value?.contact_name
+  || '无'
+))
+
+const contactPhone = computed(() => (
+  detail.value?.interview_info?.contact_phone
+  || detail.value?.hr_info?.contact_phone
+  || detail.value?.contact_phone
+  || '无'
+))
 
 const getStatusText = (status) => {
   if (status === 0) return '待确认'

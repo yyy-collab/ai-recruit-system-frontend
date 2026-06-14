@@ -1,14 +1,12 @@
 import Layout from '@/components/Layout.vue';
 import HrMessages from '@/views/hr/HRMessageList.vue';
 import SeekerMessages from '@/views/seeker/SeekerMessageList.vue';
-import HrMessages from '@/views/hr/Messages.vue';
 import HrSettings from '@/views/hr/Settings.vue';
 import HrJobs from '@/views/hr/Jobs.vue';
 import HrCreateJob from '@/views/hr/jobs/CreateJob.vue';
 import HrSmartPool from '@/views/hr/SmartPool.vue';
 import SeekerResume from '@/views/seeker/ResumeCenter.vue';
 import SeekerJobs from '@/views/seeker/Jobs.vue';
-import SeekerMessages from '@/views/seeker/Messages.vue';
 import SeekerSettings from '@/views/seeker/Settings.vue';
 import Placeholder from '@/views/common/Placeholder.vue';
 
