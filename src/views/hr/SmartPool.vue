@@ -34,11 +34,8 @@
     </div>
 
     <div v-loading="loading" class="candidate-list">
-      <article v-for="item in deliveries" :key="deliveryIdOf(item)" class="candidate-card">
+      <article v-for="item in deliveries" :key="deliveryIdOf(item)" class="candidate-card" @click="openResume(item)">
         <div class="candidate-avatar">{{ initials(candidateNameOf(item), '候') }}</div>
-        <div class="candidate-checkbox">
-          <el-checkbox v-model="selectedDeliveryIds" :label="deliveryIdOf(item)" />
-        </div>
         <div class="candidate-info">
           <div class="candidate-title">
             <h2>{{ candidateNameOf(item) }}</h2>
@@ -46,25 +43,17 @@
           </div>
           <div class="candidate-tags">
             <span>{{ valueOf(item, ['matchLevel', 'match_level'], '潜力候选人') }}</span>
-            <span>匹配度 {{ scoreOf(item) }}</span>
             <span>{{ statusTextOf(item) }}</span>
           </div>
           <p>投递时间：{{ formatDateTimeLoose(valueOf(item, ['deliveryTime', 'delivery_time'])) }}</p>
         </div>
         <div class="candidate-actions">
-          <el-button :icon="View" @click="openResume(item)">查看简历</el-button>
+          <div class="match-circle" :style="matchCircleStyle(item)">{{ matchScoreNum(item) }}</div>
           <el-button
-            v-if="deliveryStatusOf(item) === 0"
-            type="success"
-            @click="approve(item)"
-          >
-            通过
-          </el-button>
-          <el-button
-            v-if="deliveryStatusOf(item) === 1"
             type="primary"
             :icon="Message"
-            @click="openInvite(item)"
+            :disabled="Number(valueOf(item, 'status')) === 3"
+            @click.stop="openInvite(item)"
           >
             发送邀请
           </el-button>
@@ -118,9 +107,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Message, View } from '@element-plus/icons-vue';
+import { Message } from '@element-plus/icons-vue';
 import SendInterviewDialog from '@/components/SendInterviewDialog.vue';
-import { recalculateMatch } from '@/api/modules/ai';
 import { getDeliveryDetail, getDeliveryList, updateDeliveryStatus, batchUpdateDeliveryStatus } from '@/api/modules/delivery';
 import { getMyJobList } from '@/api/modules/job';
 import {
@@ -215,12 +203,9 @@ async function fetchDeliveries() {
       status: activeStatus.value,
       sort: 'match_score_desc',
     });
-    const items = pageItems(res.data);
-    deliveries.value = items;
+    deliveries.value = pageItems(res.data);
     total.value = pageTotal(res.data);
     selectedDeliveryIds.value = [];
-    await hydrateMissingMatchScores(items);
-    deliveries.value = sortDeliveriesByScore(items);
   } catch (error) {
     deliveries.value = [];
     total.value = 0;
@@ -244,15 +229,20 @@ function candidateNameOf(item) {
   return valueOf(item, ['seekerName', 'seeker_name'], '候选人');
 }
 
-function deliveryStatusOf(item) {
-  return Number(valueOf(item, 'status', -1));
+function matchScoreNum(item) {
+  const raw = valueOf(item, ['matchScore', 'match_score']);
+  if (raw === '' || raw === undefined || raw === null || raw === false) return '--';
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num < 0 || num > 100) return '--';
+  return Math.round(num);
 }
 
-function scoreOf(item) {
-  const score = valueOf(item, ['matchScore', 'match_score']);
-  const numericScore = Number(score);
-  if (score === '' || Number.isNaN(numericScore)) return '暂无';
-  return `${Number.isInteger(numericScore) ? numericScore : numericScore.toFixed(1)}%`;
+function matchCircleStyle(item) {
+  const num = Number(matchScoreNum(item));
+  if (!Number.isFinite(num)) return { background: '#c0c4cc' };
+  if (num >= 80) return { background: '#22c55e' };
+  if (num >= 50) return { background: '#f59e0b' };
+  return { background: '#ef4444' };
 }
 
 function statusTextOf(item) {
@@ -262,43 +252,11 @@ function statusTextOf(item) {
     2: '已淘汰',
     3: '待面试',
   };
-  return map[deliveryStatusOf(item)] || '未知';
-}
-
-function hasMatchScore(item) {
-  const score = valueOf(item, ['matchScore', 'match_score']);
-  return score !== '' && score !== null && !Number.isNaN(Number(score));
-}
-
-async function hydrateMissingMatchScores(items) {
-  const missingItems = items.filter(item => deliveryIdOf(item) && !hasMatchScore(item));
-  if (!missingItems.length) return;
-
-  const results = await Promise.allSettled(
-    missingItems.map(item => recalculateMatch(deliveryIdOf(item))),
-  );
-
-  results.forEach((result, index) => {
-    if (result.status !== 'fulfilled') return;
-    const data = result.value?.data || {};
-    const target = missingItems[index];
-    target.match_score = valueOf(data, ['match_score', 'matchScore'], target.match_score);
-    target.match_level = valueOf(data, ['match_level', 'matchLevel'], target.match_level);
-  });
-}
-
-function sortDeliveriesByScore(items) {
-  return [...items].sort((left, right) => {
-    const leftScoreRaw = Number(valueOf(left, ['matchScore', 'match_score'], -1));
-    const rightScoreRaw = Number(valueOf(right, ['matchScore', 'match_score'], -1));
-    const leftScore = Number.isNaN(leftScoreRaw) ? -1 : leftScoreRaw;
-    const rightScore = Number.isNaN(rightScoreRaw) ? -1 : rightScoreRaw;
-    return rightScore - leftScore;
-  });
+  return map[Number(valueOf(item, 'status'))] || '未知';
 }
 
 async function openInvite(item) {
-  const status = deliveryStatusOf(item);
+  const status = Number(valueOf(item, 'status'));
   if (status !== 1) {
     ElMessage.warning('只有已通过候选人才能发送面试邀请');
     return;
@@ -393,6 +351,26 @@ function normalizeTextList(value) {
     return value.split(/[,，/]/).map((item) => item.trim()).filter(Boolean);
   }
 }
+async function openResume(item) {
+  const did = deliveryIdOf(item);
+  console.log('当前投递ID：', did);
+  if (!did) {
+    ElMessage.warning('该条投递无ID，无法查看简历');
+    return;
+  }
+  resumeVisible.value = true;
+  resumeLoading.value = true;
+  resumeDetail.value = null;
+  try {
+    // 直接传did数字，不再包一层对象
+    const res = await getDeliveryDetail(did);
+    resumeDetail.value = res.data;
+  } catch (err) {
+    ElMessage.error(err?.msg || '简历加载失败');
+  } finally {
+    resumeLoading.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -467,8 +445,9 @@ function normalizeTextList(value) {
 }
 
 .candidate-card {
+  cursor: pointer;
   display: grid;
-  grid-template-columns: 82px 40px minmax(0, 1fr) auto;
+  grid-template-columns: 82px minmax(0, 1fr) auto;
   align-items: center;
   gap: 22px;
   padding: 18px 22px;
@@ -489,16 +468,6 @@ function normalizeTextList(value) {
   background: #4f46e5;
   font-size: 26px;
   font-weight: 900;
-}
-
-.candidate-checkbox {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.candidate-checkbox :deep(.el-checkbox__label) {
-  display: none;
 }
 
 .candidate-info {
@@ -551,9 +520,23 @@ function normalizeTextList(value) {
   font-weight: 700;
 }
 
+.match-circle {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
 .candidate-actions {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 14px;
 }
 
 .candidate-actions .el-button {
