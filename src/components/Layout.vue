@@ -6,7 +6,7 @@
           <span class="brand-mark">
             <el-icon><DataAnalysis /></el-icon>
           </span>
-          <span class="brand-name">AI-Hire</span>
+          <span class="brand-name">{{ brandText }}</span>
         </div>
 
         <el-menu
@@ -93,6 +93,7 @@ import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useUserStore } from '@/stores/user';
+import { valueOf } from '@/utils/view';
 import {
   ArrowDown,
   Bell,
@@ -112,10 +113,35 @@ const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726
 
 const activeMenu = computed(() => route.path);
 const settingsPath = computed(() => (userStore.role === 'seeker' ? '/seeker/settings' : '/hr/settings'));
+function readCachedUserInfo() {
+  const cached = localStorage.getItem('user_info');
+  if (!cached) return {};
+
+  try {
+    return JSON.parse(cached);
+  } catch (error) {
+    return {};
+  }
+}
+
+const brandText = computed(() => {
+  const info = userStore.userInfo || readCachedUserInfo();
+  const currentUserLabel = valueOf(
+    info,
+    ['username', 'id', 'user_id', 'userId', 'hr_id', 'hrId', 'seeker_id', 'seekerId'],
+  );
+  return currentUserLabel ? String(currentUserLabel) : 'AI-Hire';
+});
+
 const userName = computed(() => {
-  const info = userStore.userInfo || {};
+  const info = userStore.userInfo || readCachedUserInfo();
   if (info.real_name || info.realName || info.username) {
     return info.real_name || info.realName || info.username;
+  }
+
+  const cachedInfo = readCachedUserInfo();
+  if (cachedInfo.real_name || cachedInfo.realName || cachedInfo.username) {
+    return cachedInfo.real_name || cachedInfo.realName || cachedInfo.username;
   }
 
   const cached = localStorage.getItem('user_info');

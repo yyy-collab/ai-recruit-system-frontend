@@ -3,11 +3,14 @@
     <div class="page-head">
       <h1>智能简历中心</h1>
       <div class="head-actions">
-        <el-button class="light-action" :icon="View" :disabled="!currentResume" @click="previewCurrent">
+        <el-button class="action-button light-action" :icon="View" :disabled="!currentResume" @click="previewCurrent">
           预览简历
         </el-button>
-        <el-button class="primary-action" type="primary" :icon="Download" :disabled="!currentResume" @click="downloadCurrent">
-          下载PDF
+        <el-button class="action-button parsed-action" :icon="Document" :disabled="!currentResume || !canPreviewParsed" @click="previewParsed">
+          解析后浏览
+        </el-button>
+        <el-button class="action-button primary-action" type="primary" :icon="Download" :disabled="!currentResume" @click="downloadCurrent">
+          下载简历
         </el-button>
       </div>
     </div>
@@ -32,7 +35,7 @@
           </el-upload>
 
           <div v-if="currentResume" class="resume-file">
-            <el-icon><Document /></el-icon>
+            <el-icon class="file-icon"><Document /></el-icon>
             <div>
               <strong>{{ valueOf(currentResume, ['resumeFileName', 'resume_file_name'], '我的简历.docx') }}</strong>
               <span>上次更新：{{ formatDateLoose(valueOf(currentResume, ['createTime', 'create_time'])) }}</span>
@@ -40,7 +43,7 @@
             <em>{{ parseStatusText(valueOf(currentResume, ['isParsed', 'is_parsed'])) }}</em>
           </div>
 
-          <el-empty v-else description="暂无简历" :image-size="76" />
+          <el-empty v-else class="resume-empty" description="暂无简历" :image-size="76" />
         </div>
 
         <div class="score-card">
@@ -48,7 +51,7 @@
             <h2>简历质量评分</h2>
             <span>{{ scoreLevel }}</span>
           </div>
-          <div class="score-ring" :style="{ '--score': totalScore }">
+          <div class="score-ring" :style="scoreRingStyle">
             <strong>{{ totalScore }}</strong>
             <span>TOTAL SCORE</span>
           </div>
@@ -67,25 +70,6 @@
       </section>
 
       <section class="right-column">
-        <div class="insight-grid">
-          <article class="insight-card">
-            <span class="insight-icon orange">
-              <el-icon><MagicStick /></el-icon>
-            </span>
-            <h2>增加具体的量化指标</h2>
-            <p>在智能助手提示项目中，建议补充业务结果、转化率、节省成本等可以被验证的数字。</p>
-            <button type="button">点击查看示例 +</button>
-          </article>
-          <article class="insight-card">
-            <span class="insight-icon blue">
-              <el-icon><CollectionTag /></el-icon>
-            </span>
-            <h2>更新技术关键词</h2>
-            <p>当前简历中可强化 AI 产品、前端工程化、数据分析等岗位高频能力词。</p>
-            <button type="button">点击应用修改 +</button>
-          </article>
-        </div>
-
         <div class="radar-card">
           <h2>行业人才技能对标（高级产品经理 - 2026）</h2>
           <div class="radar-wrap">
@@ -141,9 +125,9 @@
       </section>
     </div>
 
-    <el-dialog v-model="previewVisible" class="preview-dialog" width="760px" align-center>
+    <el-dialog v-model="previewVisible" class="preview-dialog" width="820px" align-center>
       <template #header>
-        <h2>简历预览</h2>
+        <h2>{{ previewTitle }}</h2>
       </template>
       <pre>{{ previewText || '暂无可预览内容' }}</pre>
     </el-dialog>
@@ -154,11 +138,9 @@
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
-  CollectionTag,
   Document,
   Download,
   Headset,
-  MagicStick,
   View,
 } from '@element-plus/icons-vue';
 import {
@@ -166,7 +148,6 @@ import {
   getMyResumeList,
   getResumeAiDetail,
   previewResume,
-  reparseResume,
   uploadResume,
 } from '@/api/modules/resume';
 import { formatDateLoose, valueOf } from '@/utils/view';
@@ -176,9 +157,13 @@ const uploading = ref(false);
 const resumeList = ref([]);
 const detail = ref(null);
 const previewVisible = ref(false);
+const previewTitle = ref('原简历预览');
 const previewText = ref('');
 
 const currentResume = computed(() => resumeList.value[0] || null);
+const resumeParseStatus = computed(() => Number(valueOf(currentResume.value, ['isParsed', 'is_parsed'], 0)));
+const parsedPreviewText = computed(() => valueOf(detail.value, ['previewText', 'preview_text'], ''));
+const canPreviewParsed = computed(() => resumeParseStatus.value === 1);
 const analysis = computed(() => valueOf(detail.value, 'analysis', {}));
 const basicInfo = computed(() => valueOf(analysis.value, ['basicInfo', 'basic_info'], {}));
 const skills = computed(() => normalizeArray(valueOf(analysis.value, 'skills', [])));
@@ -207,6 +192,10 @@ const totalScore = computed(() => {
   const values = metrics.value.map((item) => item.value);
   return Math.round(values.reduce((sum, item) => sum + item, 0) / values.length);
 });
+
+const scoreRingStyle = computed(() => ({
+  background: `radial-gradient(circle at center, #ffffff 56%, transparent 58%), conic-gradient(#6366f1 ${totalScore.value}%, #edf1f6 0)`,
+}));
 
 const scoreLevel = computed(() => {
   if (totalScore.value >= 90) return '优秀';
@@ -313,11 +302,38 @@ async function previewCurrent() {
   if (!resumeId) return;
   try {
     const res = await previewResume(resumeId);
+    previewTitle.value = '原简历预览';
     previewText.value = valueOf(res.data, ['previewText', 'preview_text'], '');
     previewVisible.value = true;
   } catch (error) {
     ElMessage.error(error?.msg || '预览失败');
   }
+}
+
+async function previewParsed() {
+  const resumeId = valueOf(currentResume.value, ['resumeId', 'resume_id']);
+  if (!resumeId) return;
+
+  if (!parsedPreviewText.value) {
+    await fetchDetail(resumeId);
+  }
+
+  if (!parsedPreviewText.value) {
+    if (resumeParseStatus.value === 2) {
+      ElMessage.warning('简历解析中，请稍后再试');
+      return;
+    }
+    if (resumeParseStatus.value === 3) {
+      ElMessage.warning('简历解析失败，暂无法浏览解析后内容');
+      return;
+    }
+    ElMessage.warning('暂无解析后内容');
+    return;
+  }
+
+  previewTitle.value = '解析后浏览';
+  previewText.value = parsedPreviewText.value;
+  previewVisible.value = true;
 }
 
 function downloadCurrent() {
@@ -326,7 +342,14 @@ function downloadCurrent() {
     ElMessage.warning('暂无可下载文件');
     return;
   }
-  window.open(url, '_blank');
+  const fileName = valueOf(currentResume.value, ['resumeFileName', 'resume_file_name'], 'resume.docx');
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function parseStatusText(status) {
@@ -391,12 +414,15 @@ function polygonPoints(radius) {
 .head-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
+  justify-content: flex-end;
 }
 
-.head-actions .el-button {
+.head-actions .action-button {
   height: 36px;
   border-radius: 8px;
+  min-width: 108px;
   padding: 0 16px;
   font-size: 12px;
   font-weight: 900;
@@ -413,38 +439,47 @@ function polygonPoints(radius) {
   border-color: #e1e6ef;
 }
 
+.parsed-action {
+  color: #4f46e5;
+  background: #eef2ff;
+  border-color: #d7defd;
+}
+
 .resume-layout {
   display: grid;
-  grid-template-columns: 325px minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(300px, 1fr) minmax(0, 1.7fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 18px;
+  min-height: calc(100vh - 176px);
+  align-items: stretch;
 }
 
 .left-column,
 .right-column {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  display: contents;
 }
 
 .upload-card,
 .score-card,
-.insight-card,
 .radar-card {
   border-radius: 14px;
   background: #ffffff;
   box-shadow: 0 1px 0 rgba(32, 44, 68, 0.02);
+  height: 100%;
 }
 
 .upload-card {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
 }
 
-.resume-upload :deep(.el-upload) {
+.resume-upload {
   width: 100%;
 }
 
 .resume-upload :deep(.el-upload-dragger) {
-  height: 154px;
+  height: 188px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -486,18 +521,25 @@ function polygonPoints(radius) {
   font-weight: 700;
 }
 
+.resume-empty {
+  min-height: 188px;
+  margin: 0;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
 .resume-file {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   margin-top: 14px;
-  padding: 9px 10px;
+  padding: 12px 12px;
   border-radius: 9px;
   background: #f7f9fc;
 }
 
-.resume-file .el-icon {
+.resume-file .file-icon {
   color: #ef4444;
   font-size: 18px;
 }
@@ -527,7 +569,10 @@ function polygonPoints(radius) {
 }
 
 .score-card {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px;
 }
 
 .card-title {
@@ -568,9 +613,6 @@ function polygonPoints(radius) {
   justify-content: center;
   margin: 0 auto 18px;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at center, #ffffff 56%, transparent 58%),
-    conic-gradient(#6366f1 calc(var(--score) * 1%), #edf1f6 0);
 }
 
 .score-ring strong {
@@ -613,70 +655,24 @@ function polygonPoints(radius) {
   height: 100%;
 }
 
-.insight-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.insight-card {
-  min-height: 120px;
-  padding: 18px;
-}
-
-.insight-icon {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 12px;
-  border-radius: 9px;
-  font-size: 16px;
-}
-
-.insight-icon.orange {
-  color: #f59e0b;
-  background: #fff0d9;
-}
-
-.insight-icon.blue {
-  color: #3b82f6;
-  background: #e7f0ff;
-}
-
-.insight-card p {
-  margin: 9px 0 10px;
-  color: #8490a3;
-  font-size: 11px;
-  line-height: 1.55;
-  font-weight: 700;
-}
-
-.insight-card button {
-  border: 0;
-  padding: 0;
-  color: #4f46e5;
-  background: transparent;
-  font-size: 11px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
 .radar-card {
-  min-height: 284px;
-  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
 }
 
 .radar-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
 }
 
 .radar-wrap svg {
-  width: min(520px, 100%);
-  height: 236px;
+  width: min(860px, 100%);
+  height: 320px;
 }
 
 .radar-wrap text {
@@ -738,13 +734,34 @@ function polygonPoints(radius) {
   white-space: pre-wrap;
 }
 
+@media (max-width: 1280px) {
+  .resume-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+    min-height: auto;
+  }
+
+  .left-column,
+  .right-column {
+    display: contents;
+  }
+
+  .radar-card {
+    grid-column: 1 / -1;
+    min-height: 420px;
+  }
+}
+
 @media (max-width: 980px) {
   .resume-layout {
     grid-template-columns: 1fr;
   }
 
-  .insight-grid {
-    grid-template-columns: 1fr;
+  .left-column,
+  .right-column {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
   }
 }
 
@@ -762,8 +779,9 @@ function polygonPoints(radius) {
     width: 100%;
   }
 
-  .head-actions .el-button {
+  .head-actions .action-button {
     flex: 1;
+    min-width: 0;
   }
 }
 </style>
