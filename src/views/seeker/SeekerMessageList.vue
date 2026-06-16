@@ -14,7 +14,7 @@
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
-        <el-button type="primary" @click="handleSearch" style="margin-left: 10px;">搜索</el-button>
+        <el-button type="primary" class="search-button" @click="handleSearch">搜索</el-button>
       </div>
     </div>
 
@@ -24,36 +24,70 @@
         <el-radio-button label="0">待确认</el-radio-button>
         <el-radio-button label="1">已接受</el-radio-button>
         <el-radio-button label="2">已拒绝</el-radio-button>
+        <el-radio-button label="delivery">投递记录</el-radio-button>
       </el-radio-group>
     </div>
 
     <div class="message-list" v-loading="loading">
-      <div
-        v-for="item in displayList"
-        :key="item.message_id"
-        class="message-item"
-        @click="showDetail(item.message_id)"
-      >
-        <div class="avatar-wrapper">
-          <el-avatar :size="48" :src="item.avatar_url || defaultAvatar">
-            {{ getInitials(item.company_name || item.hr_name) }}
-          </el-avatar>
-        </div>
-        <div class="message-content">
-          <div class="message-header">
-            <span class="company-name">{{ item.company_name || item.hr_name }}</span>
-            <el-tag :type="getStatusTagType(item.status)">
-              {{ getStatusText(item.status) }}
-            </el-tag>
+      <template v-if="isDeliveryView">
+        <div
+          v-for="item in displayList"
+          :key="deliveryIdOf(item)"
+          class="message-item delivery-item"
+        >
+          <div class="avatar-wrapper">
+            <el-avatar :size="48" :src="defaultAvatar">
+              {{ getInitials(companyNameOf(item)) }}
+            </el-avatar>
           </div>
-          <div class="message-body">
-            <div>岗位：{{ item.job_name }}</div>
-            <div class="message-desc">面试时间：{{ item.interview_date }} {{ item.interview_time }}</div>
-            <div class="message-time">{{ formatTime(item.create_time) }}</div>
+          <div class="message-content">
+            <div class="message-header">
+              <span class="company-name">{{ companyNameOf(item) }}</span>
+              <el-tag :type="getDeliveryStatusTagType(item.status)">
+                {{ getDeliveryStatusText(item.status) }}
+              </el-tag>
+            </div>
+            <div class="message-body">
+              <div>岗位：{{ jobNameOf(item) }}</div>
+              <div class="message-desc">投递时间：{{ formatTime(item.delivery_time) }}</div>
+              <div class="message-time">{{ formatTime(item.update_time || item.delivery_time) }}</div>
+            </div>
           </div>
         </div>
-      </div>
-      <el-empty v-if="(!displayList || displayList.length === 0) && !loading" description="暂无消息" />
+      </template>
+
+      <template v-else>
+        <div
+          v-for="item in displayList"
+          :key="item.message_id"
+          class="message-item"
+          @click="showDetail(item.message_id)"
+        >
+          <div class="avatar-wrapper">
+            <el-avatar :size="48" :src="item.avatar_url || defaultAvatar">
+              {{ getInitials(item.company_name || item.hr_name) }}
+            </el-avatar>
+          </div>
+          <div class="message-content">
+            <div class="message-header">
+              <span class="company-name">{{ item.company_name || item.hr_name }}</span>
+              <el-tag :type="getMessageStatusTagType(item.status)">
+                {{ getMessageStatusText(item.status) }}
+              </el-tag>
+            </div>
+            <div class="message-body">
+              <div>岗位：{{ item.job_name }}</div>
+              <div class="message-desc">面试时间：{{ item.interview_date }} {{ item.interview_time }}</div>
+              <div class="message-time">{{ formatTime(item.create_time) }}</div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <el-empty
+        v-if="(!displayList || displayList.length === 0) && !loading"
+        :description="isDeliveryView ? '暂无投递记录' : '暂无消息'"
+      />
     </div>
 
     <el-pagination
@@ -65,7 +99,9 @@
       @current-change="handlePageChange"
       class="pagination"
     />
+
     <MessageDetailDialog
+      v-if="!isDeliveryView"
       v-model="detailVisible"
       :message-id="currentMessageId"
       @refresh="fetchList"
@@ -74,102 +110,195 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { getSeekerMessageList } from '@/api/modules/interview'
-import MessageDetailDialog from './components/MessageDetailDialog.vue'
-import { ElMessage } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { computed, onMounted, ref } from 'vue';
+import { ElMessage } from 'element-plus';
+import { Search } from '@element-plus/icons-vue';
+import { getMyDeliveryList } from '@/api/modules/delivery';
+import { getSeekerMessageList } from '@/api/modules/interview';
+import { getSeekerJobList } from '@/api/modules/job';
+import MessageDetailDialog from './components/MessageDetailDialog.vue';
 
-const loading = ref(false)
-const rawList = ref([])
-const searchKeyword = ref('')
-const statusFilter = ref('')
-const pageNum = ref(1)
-const pageSize = ref(10)
-const detailVisible = ref(false)
-const currentMessageId = ref(null)
-const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'
+const loading = ref(false);
+const rawMessageList = ref([]);
+const rawDeliveryList = ref([]);
+const searchKeyword = ref('');
+const statusFilter = ref('');
+const pageNum = ref(1);
+const pageSize = ref(10);
+const detailVisible = ref(false);
+const currentMessageId = ref(null);
+const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png';
 
-// 获取首字母（用于头像占位）
-const getInitials = (name) => {
-  if (!name) return 'U'
-  return name.charAt(0).toUpperCase()
-}
+const isDeliveryView = computed(() => statusFilter.value === 'delivery');
 
-// 状态文本映射
-const getStatusText = (status) => {
-  if (status === 0) return '待确认'
-  if (status === 1) return '已接受'
-  if (status === 2) return '已拒绝'
-  return '未知'
-}
+const sourceList = computed(() => (isDeliveryView.value ? rawDeliveryList.value : rawMessageList.value));
 
-// 前端过滤后的列表
 const filteredList = computed(() => {
-  let list = rawList.value
-  if (statusFilter.value !== '') {
-    list = list.filter(item => item.status === parseInt(statusFilter.value))
+  let list = sourceList.value;
+
+  if (!isDeliveryView.value && statusFilter.value !== '') {
+    list = list.filter((item) => Number(item.status) === Number(statusFilter.value));
   }
+
   if (searchKeyword.value.trim()) {
-    const kw = searchKeyword.value.trim().toLowerCase()
-    list = list.filter(item =>
-      (item.company_name && item.company_name.toLowerCase().includes(kw)) ||
-      (item.job_name && item.job_name.toLowerCase().includes(kw))
-    )
+    const keyword = searchKeyword.value.trim().toLowerCase();
+    list = list.filter((item) => {
+      const companyName = String(item.company_name || item.hr_name || '').toLowerCase();
+      const jobName = String(item.job_name || '').toLowerCase();
+      return companyName.includes(keyword) || jobName.includes(keyword);
+    });
   }
-  return list
-})
 
-const total = computed(() => filteredList.value.length)
+  return list;
+});
+
+const total = computed(() => filteredList.value.length);
+
 const displayList = computed(() => {
-  const start = (pageNum.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return filteredList.value.slice(start, end)
-})
+  const start = (pageNum.value - 1) * pageSize.value;
+  const end = start + pageSize.value;
+  return filteredList.value.slice(start, end);
+});
 
-// 获取消息列表（一次性获取所有，前端分页过滤）
-const fetchList = async () => {
-  loading.value = true
+function getInitials(name) {
+  if (!name) return 'U';
+  return String(name).charAt(0).toUpperCase();
+}
+
+function getMessageStatusText(status) {
+  if (Number(status) === 0) return '待确认';
+  if (Number(status) === 1) return '已接受';
+  if (Number(status) === 2) return '已拒绝';
+  return '未知';
+}
+
+function getMessageStatusTagType(status) {
+  if (Number(status) === 0) return 'warning';
+  if (Number(status) === 1) return 'success';
+  if (Number(status) === 2) return 'danger';
+  return 'info';
+}
+
+function getDeliveryStatusText(status) {
+  if (Number(status) === 0) return '待处理';
+  if (Number(status) === 1) return '已通过';
+  if (Number(status) === 2) return '已淘汰';
+  if (Number(status) === 3) return '待面试';
+  return '未知状态';
+}
+
+function getDeliveryStatusTagType(status) {
+  if (Number(status) === 0) return 'warning';
+  if (Number(status) === 1) return 'success';
+  if (Number(status) === 2) return 'danger';
+  if (Number(status) === 3) return '';
+  return 'info';
+}
+
+function deliveryIdOf(item) {
+  return item.delivery_id || item.deliveryId;
+}
+
+function deliveryJobIdOf(item) {
+  return item.job_id || item.jobId;
+}
+
+function companyNameOf(item) {
+  return item.company_name || item.companyName || '匿名公司';
+}
+
+function jobNameOf(item) {
+  return item.job_name || item.jobName || '未命名岗位';
+}
+
+function jobIdOf(item) {
+  return item.id || item.job_id || item.jobId;
+}
+
+function isAppliedJob(item) {
+  return Boolean(
+    item.is_delivered
+    || item.isDelivered
+    || item.already_delivered
+    || item.has_delivered
+    || item.isApplied,
+  );
+}
+
+function formatTime(time) {
+  if (!time) return '';
+  return String(time).replace('T', ' ').substring(0, 16);
+}
+
+async function fetchList() {
+  loading.value = true;
   try {
-    const params = { pageNum: 1, pageSize: 999 }
-    if (statusFilter.value !== '') params.status = statusFilter.value
-    const res = await getSeekerMessageList(params)
-    if (res.code === 0) {
-      rawList.value = res.data.list || res.data.items || []
-      pageNum.value = 1
+    if (isDeliveryView.value) {
+      const [deliveryRes, jobRes] = await Promise.all([
+        getMyDeliveryList({ pageNum: 1, pageSize: 999 }),
+        getSeekerJobList({}),
+      ]);
+
+      if (deliveryRes.code === 0 && jobRes.code === 0) {
+        const jobItems = jobRes.data?.items || jobRes.data || [];
+        const normalizedJobs = Array.isArray(jobItems) ? jobItems : [jobItems];
+        const appliedJobIds = new Set(
+          normalizedJobs
+            .filter(isAppliedJob)
+            .map((item) => String(jobIdOf(item)))
+            .filter(Boolean),
+        );
+
+        rawDeliveryList.value = (deliveryRes.data?.items || []).filter((item) =>
+          appliedJobIds.has(String(deliveryJobIdOf(item))),
+        );
+        pageNum.value = 1;
+      } else {
+        ElMessage.error(deliveryRes.msg || jobRes.msg || '获取投递记录失败');
+      }
+      return;
+    }
+
+    const params = { pageNum: 1, pageSize: 999 };
+    if (statusFilter.value !== '') {
+      params.status = Number(statusFilter.value);
+    }
+
+    const messageRes = await getSeekerMessageList(params);
+    if (messageRes.code === 0) {
+      rawMessageList.value = messageRes.data?.list || messageRes.data?.items || [];
+      pageNum.value = 1;
     } else {
-      ElMessage.error(res.msg)
+      ElMessage.error(messageRes.msg || '获取消息失败');
     }
   } catch (error) {
-    console.error(error)
+    console.error(error);
+    ElMessage.error(isDeliveryView.value ? '获取投递记录失败' : '获取消息失败');
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
-const handleSearch = () => { pageNum.value = 1 }
-const handleFilterChange = () => { pageNum.value = 1; fetchList() }
-const handlePageChange = () => {}
-const showDetail = (messageId) => {
-  currentMessageId.value = messageId
-  detailVisible.value = true
+function handleSearch() {
+  pageNum.value = 1;
 }
 
-const getStatusTagType = (status) => {
-  if (status === 0) return 'warning'
-  if (status === 1) return 'success'
-  if (status === 2) return 'danger'
-  return 'info'
+function handleFilterChange() {
+  pageNum.value = 1;
+  detailVisible.value = false;
+  fetchList();
 }
 
-const formatTime = (time) => {
-  if (!time) return ''
-  return time.replace('T', ' ').substring(0, 16)
+function handlePageChange() {}
+
+function showDetail(messageId) {
+  currentMessageId.value = messageId;
+  detailVisible.value = true;
 }
 
 onMounted(() => {
-  fetchList()
-})
+  fetchList();
+});
 </script>
 
 <style scoped>
@@ -201,11 +330,11 @@ onMounted(() => {
 }
 
 .page-title {
+  margin: 0;
   color: var(--page-text);
   font-size: 28px;
   font-weight: 800;
   letter-spacing: 0.02em;
-  margin: 0;
 }
 .search-wrapper {
   display: flex;
@@ -224,6 +353,10 @@ onMounted(() => {
 
 .search-input :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 1px var(--page-accent) inset, 0 0 0 4px rgba(79, 70, 229, 0.12);
+}
+
+.search-button {
+  margin-left: 10px;
 }
 
 .filter-bar {
@@ -249,23 +382,36 @@ onMounted(() => {
 .message-item {
   display: flex;
   gap: 16px;
-  background: #fff;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--page-border);
   border-radius: 16px;
+  background: #fff;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
   padding: 16px;
   margin-bottom: 16px;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  border: 1px solid var(--page-border);
 }
 
 .message-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
+
+.delivery-item {
+  cursor: default;
+}
+
+.delivery-item:hover {
+  transform: none;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+}
+
 .avatar-wrapper {
   flex-shrink: 0;
 }
+
 .message-content {
   flex: 1;
   overflow: hidden;
@@ -281,9 +427,9 @@ onMounted(() => {
 }
 
 .company-name {
+  color: var(--page-text);
   font-size: 18px;
   font-weight: 800;
-  color: var(--page-text);
 }
 
 .message-header :deep(.el-tag) {
@@ -307,8 +453,8 @@ onMounted(() => {
 }
 
 .message-time {
-  font-size: 12px;
   color: #97a1b4;
+  font-size: 12px;
   text-align: right;
 }
 
@@ -317,24 +463,27 @@ onMounted(() => {
   text-align: center;
 }
 
-/* 主题色覆盖 */
 :deep(.el-button--primary) {
-  background-color: #4F46E5;
-  border-color: #4F46E5;
+  background-color: #4f46e5;
+  border-color: #4f46e5;
 }
+
 :deep(.el-button--primary:hover) {
   background-color: #4338ca;
   border-color: #4338ca;
 }
+
 :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #4F46E5 inset !important;
+  box-shadow: 0 0 0 1px #4f46e5 inset !important;
 }
+
 :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background-color: #4F46E5;
-  border-color: #4F46E5;
-  box-shadow: -1px 0 0 0 #4F46E5;
+  background-color: #4f46e5;
+  border-color: #4f46e5;
+  box-shadow: -1px 0 0 0 #4f46e5;
 }
+
 :deep(.el-radio-button__inner:hover) {
-  color: #4F46E5;
+  color: #4f46e5;
 }
 </style>
