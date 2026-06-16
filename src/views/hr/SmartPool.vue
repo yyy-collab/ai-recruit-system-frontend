@@ -28,9 +28,11 @@
     </div>
 
     <div class="action-bar">
-      <el-checkbox v-model="allSelected">全选</el-checkbox>
-      <el-button type="primary" size="small" @click="batchApprove">批量通过</el-button>
-      <el-button type="danger" size="small" @click="batchReject">批量淘汰</el-button>
+      <div style="display:flex;align-items:center;gap:12px;margin-left:24px; margin-bottom: 20px;">
+        <el-checkbox v-model="selectAll">全选</el-checkbox>
+        <el-button type="primary">批量通过</el-button>
+        <el-button type="danger">批量淘汰</el-button>
+      </div>
     </div>
 
     <div v-loading="loading" class="candidate-list">
