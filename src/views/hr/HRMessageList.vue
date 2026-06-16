@@ -325,6 +325,26 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.candidate-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--page-text);
+}
+
+.message-header :deep(.el-tag) {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
 .message-body {
   color: var(--page-subtle);
   font-size: 14px;

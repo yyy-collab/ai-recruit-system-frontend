@@ -14,7 +14,7 @@
           @keyup.enter.native="handleSearch"
           class="search-input"
         />
-        <el-button type="primary" icon="el-icon-search" @click="handleSearch">搜索</el-button>
+        <el-button type="primary" @click="handleSearch">搜索</el-button>
       </div>
     </div>
 
