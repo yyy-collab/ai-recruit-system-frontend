@@ -136,7 +136,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Document,
   Download,
@@ -271,14 +271,25 @@ async function handleUploadChange(uploadFile) {
     return;
   }
 
+  if (currentResume.value) {
+    try {
+      await ElMessageBox.confirm('当前账号已上传过简历，继续后会直接覆盖当前简历并重新解析。是否继续？', '更新简历', {
+        confirmButtonText: '覆盖更新',
+        cancelButtonText: '取消',
+        type: 'warning',
+      });
+    } catch {
+      return;
+    }
+  }
+
   uploading.value = true;
-  const replacingResume = Boolean(currentResume.value);
   try {
     await uploadResume(file);
-    ElMessage.success(replacingResume ? '简历更新成功' : '简历上传成功');
+    ElMessage.success(currentResume.value ? '简历更新成功' : '简历上传成功');
     await fetchResume();
   } catch (error) {
-    ElMessage.error(error?.msg || '上传失败');
+    ElMessage.error(error?.msg || (currentResume.value ? '更新失败' : '上传失败'));
   } finally {
     uploading.value = false;
   }

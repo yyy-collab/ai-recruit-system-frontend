@@ -115,7 +115,6 @@ import { ElMessage } from 'element-plus';
 import { Search } from '@element-plus/icons-vue';
 import { getMyDeliveryList } from '@/api/modules/delivery';
 import { getSeekerMessageList } from '@/api/modules/interview';
-import { getSeekerJobList } from '@/api/modules/job';
 import MessageDetailDialog from './components/MessageDetailDialog.vue';
 
 const loading = ref(false);
@@ -130,7 +129,6 @@ const currentMessageId = ref(null);
 const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png';
 
 const isDeliveryView = computed(() => statusFilter.value === 'delivery');
-
 const sourceList = computed(() => (isDeliveryView.value ? rawDeliveryList.value : rawMessageList.value));
 
 const filteredList = computed(() => {
@@ -199,30 +197,12 @@ function deliveryIdOf(item) {
   return item.delivery_id || item.deliveryId;
 }
 
-function deliveryJobIdOf(item) {
-  return item.job_id || item.jobId;
-}
-
 function companyNameOf(item) {
   return item.company_name || item.companyName || '匿名公司';
 }
 
 function jobNameOf(item) {
   return item.job_name || item.jobName || '未命名岗位';
-}
-
-function jobIdOf(item) {
-  return item.id || item.job_id || item.jobId;
-}
-
-function isAppliedJob(item) {
-  return Boolean(
-    item.is_delivered
-    || item.isDelivered
-    || item.already_delivered
-    || item.has_delivered
-    || item.isApplied,
-  );
 }
 
 function formatTime(time) {
@@ -234,27 +214,13 @@ async function fetchList() {
   loading.value = true;
   try {
     if (isDeliveryView.value) {
-      const [deliveryRes, jobRes] = await Promise.all([
-        getMyDeliveryList({ pageNum: 1, pageSize: 999 }),
-        getSeekerJobList({}),
-      ]);
-
-      if (deliveryRes.code === 0 && jobRes.code === 0) {
-        const jobItems = jobRes.data?.items || jobRes.data || [];
-        const normalizedJobs = Array.isArray(jobItems) ? jobItems : [jobItems];
-        const appliedJobIds = new Set(
-          normalizedJobs
-            .filter(isAppliedJob)
-            .map((item) => String(jobIdOf(item)))
-            .filter(Boolean),
-        );
-
-        rawDeliveryList.value = (deliveryRes.data?.items || []).filter((item) =>
-          appliedJobIds.has(String(deliveryJobIdOf(item))),
-        );
+      const deliveryRes = await getMyDeliveryList({ pageNum: 1, pageSize: 999 });
+      if (deliveryRes.code === 0) {
+        const deliveryItems = deliveryRes.data?.items || deliveryRes.data?.list || [];
+        rawDeliveryList.value = Array.isArray(deliveryItems) ? deliveryItems : [];
         pageNum.value = 1;
       } else {
-        ElMessage.error(deliveryRes.msg || jobRes.msg || '获取投递记录失败');
+        ElMessage.error(deliveryRes.msg || '获取投递记录失败');
       }
       return;
     }
@@ -336,10 +302,12 @@ onMounted(() => {
   font-weight: 800;
   letter-spacing: 0.02em;
 }
+
 .search-wrapper {
   display: flex;
   align-items: center;
 }
+
 .search-input {
   width: 300px;
 }
@@ -388,8 +356,6 @@ onMounted(() => {
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
-  padding: 16px;
-  margin-bottom: 16px;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
@@ -422,7 +388,6 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 14px;
   margin-bottom: 8px;
 }
 
@@ -446,8 +411,6 @@ onMounted(() => {
 }
 
 .message-desc {
-  margin: 8px 0;
-  color: #4d5970;
   margin: 6px 0;
   color: #666;
 }
