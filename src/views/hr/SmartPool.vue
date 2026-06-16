@@ -3,9 +3,14 @@
     <div class="page-head">
       <div>
         <h1>智能筛选池</h1>
-        <p>按岗位查看候选人投递，筛选后发送面试邀请</p>
+        <p>按岗位查看候选人投递，筛选后发送面试邀请。</p>
       </div>
-      <el-select v-model="selectedJobId" class="job-select" placeholder="选择岗位" @change="fetchDeliveries">
+      <el-select
+        v-model="selectedJobId"
+        class="job-select"
+        placeholder="选择岗位"
+        @change="handleJobChange"
+      >
         <el-option
           v-for="job in jobs"
           :key="valueOf(job, 'id')"
@@ -28,45 +33,71 @@
     </div>
 
     <div class="action-bar">
-      <div style="display:flex;align-items:center;gap:12px;margin-left:24px; margin-bottom: 20px;">
-        <el-checkbox v-model="selectAll">全选</el-checkbox>
-        <el-button type="primary">批量通过</el-button>
-        <el-button type="danger">批量淘汰</el-button>
+      <div class="bulk-actions">
+        <el-checkbox v-model="allSelected" :disabled="!deliveries.length">全选</el-checkbox>
+        <el-button type="primary" :disabled="!selectedDeliveryIds.length" @click="batchApprove">
+          批量通过
+        </el-button>
+        <el-button type="danger" :disabled="!selectedDeliveryIds.length" @click="batchReject">
+          批量淘汰
+        </el-button>
       </div>
     </div>
 
     <div v-loading="loading" class="candidate-list">
-      <article v-for="item in deliveries" :key="deliveryIdOf(item)" class="candidate-card" @click="openResume(item)">
+      <article
+        v-for="item in deliveries"
+        :key="deliveryIdOf(item)"
+        :class="['candidate-card', { 'is-selected': isSelected(item) }]"
+        @click="openResume(item)"
+      >
+        <div class="candidate-check" @click.stop>
+          <el-checkbox
+            :model-value="isSelected(item)"
+            @change="(value) => toggleSelection(item, value)"
+          />
+        </div>
+
         <div class="candidate-avatar">{{ initials(candidateNameOf(item), '候') }}</div>
+
         <div class="candidate-info">
           <div class="candidate-title">
             <h2>{{ candidateNameOf(item) }}</h2>
             <span>应聘岗位：{{ currentJobName }}</span>
           </div>
           <div class="candidate-tags">
-            <span>{{ valueOf(item, ['matchLevel', 'match_level'], '潜力候选人') }}</span>
+            <span>{{ matchLevelOf(item) }}</span>
             <span>{{ statusTextOf(item) }}</span>
           </div>
           <p>投递时间：{{ formatDateTimeLoose(valueOf(item, ['deliveryTime', 'delivery_time'])) }}</p>
         </div>
+
         <div class="candidate-actions">
           <div class="decision-actions">
-            <el-button type="success" plain :disabled="isApproveDisabled(item)" @click.stop="approve(item)">
+            <el-button
+              type="success"
+              plain
+              :disabled="isApproveDisabled(item)"
+              @click.stop="approve(item)"
+            >
               单独通过
             </el-button>
-            <el-button type="danger" plain :disabled="isRejectDisabled(item)" @click.stop="reject(item)">
+            <el-button
+              type="danger"
+              plain
+              :disabled="isRejectDisabled(item)"
+              @click.stop="reject(item)"
+            >
               淘汰
             </el-button>
           </div>
+
           <div class="match-score-panel">
             <span class="match-score-label">匹配度</span>
             <div class="match-circle" :style="matchCircleStyle(item)">{{ matchScoreNum(item) }}</div>
           </div>
-          <el-button
-            type="primary"
-            :icon="Message"
-            @click.stop="openInvite(item)"
-          >
+
+          <el-button type="primary" :icon="Message" @click.stop="openInvite(item)">
             发送邀请
           </el-button>
         </div>
@@ -86,7 +117,7 @@
         layout="prev, pager, next"
         :page-size="pageSize"
         :total="total"
-        @current-change="fetchDeliveries"
+        @current-change="handlePageChange"
       />
     </div>
 
@@ -98,7 +129,7 @@
 
     <el-dialog v-model="resumeVisible" class="resume-dialog" width="820px" align-center>
       <template #header>
-        <h2>原简历详情</h2>
+        <h2>简历详情</h2>
       </template>
       <div v-loading="resumeLoading" class="resume-detail">
         <pre v-if="resumeDetail">{{ resumePreviewText || '暂无可预览内容' }}</pre>
@@ -113,7 +144,12 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Message } from '@element-plus/icons-vue';
 import SendInterviewDialog from '@/components/SendInterviewDialog.vue';
 import { recalculateMatch } from '@/api/modules/ai';
-import { getDeliveryDetail, getDeliveryList, updateDeliveryStatus, batchUpdateDeliveryStatus } from '@/api/modules/delivery';
+import {
+  batchUpdateDeliveryStatus,
+  getDeliveryDetail,
+  getDeliveryList,
+  updateDeliveryStatus,
+} from '@/api/modules/delivery';
 import { getMyJobList } from '@/api/modules/job';
 import {
   formatDateTimeLoose,
@@ -131,6 +167,9 @@ const statusTabs = [
   { label: '待面试', value: 3 },
 ];
 
+const allDeliveryStatuses = [0, 1, 2, 3];
+const pageSize = 8;
+
 const jobs = ref([]);
 const selectedJobId = ref();
 const activeStatus = ref(undefined);
@@ -138,9 +177,7 @@ const deliveries = ref([]);
 const selectedDeliveryIds = ref([]);
 const loading = ref(false);
 const pageNum = ref(1);
-const pageSize = 8;
 const total = ref(0);
-const allDeliveryStatuses = [0, 1, 2, 3];
 const inviteVisible = ref(false);
 const activeCandidate = ref({});
 const resumeVisible = ref(false);
@@ -151,16 +188,20 @@ const recalculatedMatchIds = ref([]);
 
 const allSelected = computed({
   get() {
-    return deliveries.value.length > 0 && deliveries.value.every(item => selectedDeliveryIds.value.includes(deliveryIdOf(item)));
+    return deliveries.value.length > 0 && deliveries.value.every((item) => {
+      const deliveryId = deliveryIdOf(item);
+      return deliveryId !== undefined
+        && deliveryId !== null
+        && selectedDeliveryIds.value.includes(String(deliveryId));
+    });
   },
   set(value) {
-    if (value) {
-      selectedDeliveryIds.value = deliveries.value
-        .map(item => deliveryIdOf(item))
-        .filter(Boolean);
-    } else {
-      selectedDeliveryIds.value = [];
-    }
+    selectedDeliveryIds.value = value
+      ? deliveries.value
+        .map((item) => deliveryIdOf(item))
+        .filter((id) => id !== undefined && id !== null)
+        .map((id) => String(id))
+      : [];
   },
 });
 
@@ -172,16 +213,22 @@ const currentJobName = computed(() => {
 const resumePreviewText = computed(() => {
   const resume = valueOf(resumeDetail.value, ['resume_info', 'resumeInfo'], {});
   const parsedData = valueOf(resume, ['parsed_data', 'parsedData'], {});
-  return valueOf(resume, ['previewText', 'preview_text'])
-    || [
-      `工作经验：${valueOf(parsedData, ['work_experience', 'workExperience'], '暂无')}`,
-      `核心技能：${normalizeTextList(valueOf(parsedData, 'skills', [])).join(' / ') || '暂无'}`,
-    ].join('\n');
+  const directPreview = valueOf(resume, ['preview_text', 'previewText'], '');
+  if (directPreview) return directPreview;
+
+  const workExperience = valueOf(parsedData, ['work_experience', 'workExperience'], '暂无');
+  const skills = normalizeTextList(valueOf(parsedData, 'skills', []));
+  return [
+    `工作经验：${workExperience}`,
+    `核心技能：${skills.join(' / ') || '暂无'}`,
+  ].join('\n');
 });
 
 onMounted(async () => {
   await fetchJobs();
-  if (selectedJobId.value) await fetchDeliveries();
+  if (selectedJobId.value) {
+    await fetchDeliveries();
+  }
 });
 
 async function fetchJobs() {
@@ -201,6 +248,7 @@ async function fetchDeliveries() {
     selectedDeliveryIds.value = [];
     return;
   }
+
   loading.value = true;
   try {
     if (activeStatus.value === undefined) {
@@ -216,6 +264,7 @@ async function fetchDeliveries() {
       deliveries.value = pageItems(res.data);
       total.value = pageTotal(res.data);
     }
+
     selectedDeliveryIds.value = [];
     await backfillMissingMatchScores();
   } catch (error) {
@@ -241,9 +290,10 @@ async function fetchAllStatusDeliveries() {
   const mergedMap = new Map();
   results.forEach((result) => {
     if (result.status !== 'fulfilled') return;
+
     pageItems(result.value.data).forEach((item) => {
       const deliveryId = deliveryIdOf(item);
-      if (!deliveryId) return;
+      if (deliveryId === undefined || deliveryId === null) return;
       mergedMap.set(String(deliveryId), item);
     });
   });
@@ -276,7 +326,9 @@ function hasMatchScore(item) {
 async function backfillMissingMatchScores() {
   const missingItems = deliveries.value.filter((item) => {
     const deliveryId = deliveryIdOf(item);
-    return deliveryId && !hasMatchScore(item) && !recalculatedMatchIds.value.includes(String(deliveryId));
+    return deliveryId
+      && !hasMatchScore(item)
+      && !recalculatedMatchIds.value.includes(String(deliveryId));
   });
 
   if (!missingItems.length) return;
@@ -314,6 +366,15 @@ async function backfillMissingMatchScores() {
   }
 }
 
+function handleJobChange() {
+  pageNum.value = 1;
+  fetchDeliveries();
+}
+
+function handlePageChange() {
+  fetchDeliveries();
+}
+
 function switchStatus(status) {
   activeStatus.value = status;
   pageNum.value = 1;
@@ -324,8 +385,34 @@ function deliveryIdOf(item) {
   return valueOf(item, ['deliveryId', 'delivery_id']);
 }
 
+function isSelected(item) {
+  const deliveryId = deliveryIdOf(item);
+  return deliveryId !== undefined
+    && deliveryId !== null
+    && selectedDeliveryIds.value.includes(String(deliveryId));
+}
+
+function toggleSelection(item, checked) {
+  const deliveryId = deliveryIdOf(item);
+  if (deliveryId === undefined || deliveryId === null) return;
+
+  const normalizedId = String(deliveryId);
+  if (checked) {
+    if (!selectedDeliveryIds.value.includes(normalizedId)) {
+      selectedDeliveryIds.value = [...selectedDeliveryIds.value, normalizedId];
+    }
+    return;
+  }
+
+  selectedDeliveryIds.value = selectedDeliveryIds.value.filter((id) => id !== normalizedId);
+}
+
 function candidateNameOf(item) {
   return valueOf(item, ['seekerName', 'seeker_name'], '候选人');
+}
+
+function matchLevelOf(item) {
+  return valueOf(item, ['matchLevel', 'match_level'], '潜力候选人');
 }
 
 function statusOf(item) {
@@ -336,7 +423,16 @@ function statusOf(item) {
 function isInviteSent(item) {
   const rawFlag = valueOf(
     item,
-    ['inviteSent', 'invite_sent', 'interviewSent', 'interview_sent', 'hasInterview', 'has_interview', 'hasInterviewInvite', 'has_interview_invite'],
+    [
+      'inviteSent',
+      'invite_sent',
+      'interviewSent',
+      'interview_sent',
+      'hasInterview',
+      'has_interview',
+      'hasInterviewInvite',
+      'has_interview_invite',
+    ],
     undefined,
   );
   const deliveryId = deliveryIdOf(item);
@@ -380,6 +476,7 @@ function selectableIdsFor(action) {
 function matchScoreNum(item) {
   const raw = valueOf(item, ['matchScore', 'match_score']);
   if (raw === '' || raw === undefined || raw === null || raw === false) return '--';
+
   const num = Number(raw);
   if (!Number.isFinite(num) || num < 0 || num > 100) return '--';
   return Math.round(num);
@@ -418,6 +515,7 @@ function setLocalDeliveryStatus(deliveryId, status) {
     item.status = status;
     changed = true;
   });
+
   if (changed) {
     deliveries.value = [...deliveries.value];
   }
@@ -426,11 +524,13 @@ function setLocalDeliveryStatus(deliveryId, status) {
 function setLocalBatchStatus(deliveryIds, status) {
   const idSet = new Set(deliveryIds.map((id) => String(id)));
   let changed = false;
+
   deliveries.value.forEach((item) => {
     if (!idSet.has(String(deliveryIdOf(item)))) return;
     item.status = status;
     changed = true;
   });
+
   if (changed) {
     deliveries.value = [...deliveries.value];
   }
@@ -439,19 +539,24 @@ function setLocalBatchStatus(deliveryIds, status) {
 async function openInvite(item) {
   const status = statusOf(item);
   if (isInviteSent(item)) {
-    ElMessage.warning('该求职者已发送过邀请');
+    ElMessage.warning('该求职者已发送过面试邀请');
     return;
   }
   if (status !== 1) {
-    ElMessage.warning('只有已通过候选人才能发送面试邀请');
+    ElMessage.warning('只有已通过候选人才可以发送面试邀请');
     return;
   }
+
+  const skillTags = normalizeTextList(
+    valueOf(item, ['skillTags', 'skill_tags', 'skills'], []),
+  );
+
   activeCandidate.value = {
     ...item,
     deliveryId: deliveryIdOf(item),
     seekerName: candidateNameOf(item),
     jobName: currentJobName.value,
-    skills: [valueOf(item, ['matchLevel', 'match_level'], '高潜力'), '架构能力强', '沟通稳定'],
+    skills: skillTags.length ? skillTags : [matchLevelOf(item), '沟通良好'],
   };
   inviteVisible.value = true;
 }
@@ -459,6 +564,7 @@ async function openInvite(item) {
 async function approve(item) {
   const deliveryId = deliveryIdOf(item);
   if (!deliveryId) return;
+
   if (statusOf(item) === 2) {
     ElMessage.warning('已淘汰的候选人不可再次通过');
     return;
@@ -468,9 +574,10 @@ async function approve(item) {
     return;
   }
   if (isInviteSent(item)) {
-    ElMessage.warning('已发送邀请的候选人不可再次更改状态');
+    ElMessage.warning('已发送邀请的候选人不可再次修改状态');
     return;
   }
+
   try {
     await updateDeliveryStatus({ delivery_id: deliveryId, status: 1, comment: '' });
     ElMessage.success('已通过候选人');
@@ -485,14 +592,16 @@ async function batchApprove() {
     ElMessage.warning('请先选择候选人');
     return;
   }
+
   const deliveryIds = selectableIdsFor('approve');
   if (!deliveryIds.length) {
     ElMessage.warning('所选候选人中没有可通过的记录');
     return;
   }
+
   try {
     if (deliveryIds.length !== selectedDeliveryIds.value.length) {
-      ElMessage.warning('已通过、已淘汰或已发送邀请的候选人已自动跳过');
+      ElMessage.warning('部分候选人因状态限制已自动跳过');
     }
     await batchUpdateDeliveryStatus({ delivery_ids: deliveryIds, status: 1 });
     ElMessage.success('已批量通过候选人');
@@ -506,6 +615,7 @@ async function batchApprove() {
 async function reject(item) {
   const deliveryId = deliveryIdOf(item);
   if (!deliveryId) return;
+
   if (statusOf(item) === 1) {
     ElMessage.warning('已通过的候选人不可再次淘汰');
     return;
@@ -515,17 +625,19 @@ async function reject(item) {
     return;
   }
   if (isInviteSent(item)) {
-    ElMessage.warning('已发送邀请的候选人不可再次更改状态');
+    ElMessage.warning('已发送邀请的候选人不可再次修改状态');
     return;
   }
+
   try {
     const { value } = await ElMessageBox.prompt('请输入淘汰原因', '淘汰候选人', {
       confirmButtonText: '确认淘汰',
       cancelButtonText: '取消',
-      inputPattern: /\S+/, 
+      inputPattern: /\S+/,
       inputErrorMessage: '淘汰原因不能为空',
       inputValue: '不符合岗位要求',
     });
+
     await updateDeliveryStatus({ delivery_id: deliveryId, status: 2, comment: value.trim() });
     ElMessage.success('已淘汰候选人');
     setLocalDeliveryStatus(deliveryId, 2);
@@ -540,23 +652,31 @@ async function batchReject() {
     ElMessage.warning('请先选择候选人');
     return;
   }
+
   const deliveryIds = selectableIdsFor('reject');
   if (!deliveryIds.length) {
     ElMessage.warning('所选候选人中没有可淘汰的记录');
     return;
   }
+
   try {
     const { value } = await ElMessageBox.prompt('请输入批量淘汰原因', '批量淘汰候选人', {
       confirmButtonText: '确认淘汰',
       cancelButtonText: '取消',
-      inputPattern: /\S+/, 
+      inputPattern: /\S+/,
       inputErrorMessage: '淘汰原因不能为空',
       inputValue: '不符合岗位要求',
     });
+
     if (deliveryIds.length !== selectedDeliveryIds.value.length) {
-      ElMessage.warning('已通过、已淘汰或已发送邀请的候选人已自动跳过');
+      ElMessage.warning('部分候选人因状态限制已自动跳过');
     }
-    await batchUpdateDeliveryStatus({ delivery_ids: deliveryIds, status: 2, reject_reason: value.trim() });
+
+    await batchUpdateDeliveryStatus({
+      delivery_ids: deliveryIds,
+      status: 2,
+      reject_reason: value.trim(),
+    });
     ElMessage.success('已批量淘汰候选人');
     setLocalBatchStatus(deliveryIds, 2);
     selectedDeliveryIds.value = [];
@@ -566,20 +686,21 @@ async function batchReject() {
   }
 }
 
-async function handleInviteSuccess(payload) {
+function handleInviteSuccess(payload) {
   const deliveryId = payload?.deliveryId || deliveryIdOf(activeCandidate.value);
-  if (deliveryId) {
-    const normalizedId = String(deliveryId);
-    if (!sentInviteIds.value.includes(normalizedId)) {
-      sentInviteIds.value = [...sentInviteIds.value, normalizedId];
-    }
-    setLocalDeliveryStatus(deliveryId, 3);
+  if (!deliveryId) return;
+
+  const normalizedId = String(deliveryId);
+  if (!sentInviteIds.value.includes(normalizedId)) {
+    sentInviteIds.value = [...sentInviteIds.value, normalizedId];
   }
+  setLocalDeliveryStatus(deliveryId, 3);
 }
 
 function normalizeTextList(value) {
   if (Array.isArray(value)) return value;
   if (typeof value !== 'string') return [];
+
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : [];
@@ -587,22 +708,22 @@ function normalizeTextList(value) {
     return value.split(/[,，/]/).map((item) => item.trim()).filter(Boolean);
   }
 }
+
 async function openResume(item) {
-  const did = deliveryIdOf(item);
-  console.log('当前投递ID：', did);
-  if (!did) {
-    ElMessage.warning('该条投递无ID，无法查看简历');
+  const deliveryId = deliveryIdOf(item);
+  if (!deliveryId) {
+    ElMessage.warning('该投递缺少记录 ID，无法查看简历');
     return;
   }
+
   resumeVisible.value = true;
   resumeLoading.value = true;
   resumeDetail.value = null;
   try {
-    // 直接传did数字，不再包一层对象
-    const res = await getDeliveryDetail(did);
+    const res = await getDeliveryDetail(deliveryId);
     resumeDetail.value = res.data;
-  } catch (err) {
-    ElMessage.error(err?.msg || '简历加载失败');
+  } catch (error) {
+    ElMessage.error(error?.msg || '简历加载失败');
   } finally {
     resumeLoading.value = false;
   }
@@ -673,6 +794,17 @@ async function openResume(item) {
   background: #4f46e5;
 }
 
+.action-bar {
+  margin-bottom: 18px;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 24px;
+}
+
 .candidate-list {
   display: flex;
   flex-direction: column;
@@ -681,9 +813,9 @@ async function openResume(item) {
 }
 
 .candidate-card {
-  cursor: pointer;
+  position: relative;
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr) auto;
+  grid-template-columns: 32px 82px minmax(0, 1fr) auto;
   align-items: center;
   gap: 22px;
   padding: 18px 22px;
@@ -691,6 +823,23 @@ async function openResume(item) {
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 2px 5px rgba(34, 40, 59, 0.16);
+  cursor: pointer;
+}
+
+.candidate-card.is-selected {
+  border-color: rgba(79, 70, 229, 0.42);
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.12);
+}
+
+.candidate-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.candidate-check :deep(.el-checkbox__inner) {
+  width: 16px;
+  height: 16px;
 }
 
 .candidate-avatar {
@@ -756,6 +905,23 @@ async function openResume(item) {
   font-weight: 700;
 }
 
+.candidate-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.decision-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decision-actions .el-button {
+  min-width: 92px;
+  margin-left: 0;
+}
+
 .match-score-panel {
   display: flex;
   flex-direction: column;
@@ -782,23 +948,6 @@ async function openResume(item) {
   font-size: 19px;
   font-weight: 900;
   flex-shrink: 0;
-}
-
-.decision-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.decision-actions .el-button {
-  min-width: 92px;
-  margin-left: 0;
-}
-
-.candidate-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
 }
 
 .candidate-actions .el-button {
@@ -861,8 +1010,13 @@ async function openResume(item) {
     width: 100%;
   }
 
+  .bulk-actions {
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+
   .candidate-card {
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 28px 64px minmax(0, 1fr);
     gap: 14px;
   }
 
@@ -878,7 +1032,7 @@ async function openResume(item) {
   }
 
   .candidate-actions {
-    grid-column: 2;
+    grid-column: 3;
     align-items: flex-start;
     flex-wrap: wrap;
     justify-content: flex-start;
