@@ -94,21 +94,12 @@
       @success="handleInviteSuccess"
     />
 
-    <el-dialog v-model="resumeVisible" class="resume-dialog" width="760px" align-center>
+    <el-dialog v-model="resumeVisible" class="resume-dialog" width="820px" align-center>
       <template #header>
-        <h2>候选人简历</h2>
+        <h2>原简历详情</h2>
       </template>
       <div v-loading="resumeLoading" class="resume-detail">
-        <template v-if="resumeDetail">
-          <div class="profile-line">
-            <div class="profile-avatar">{{ initials(valueOf(valueOf(resumeDetail, ['seeker_info', 'seekerInfo'], {}), ['real_name', 'realName']), '候') }}</div>
-            <div>
-              <strong>{{ valueOf(valueOf(resumeDetail, ['seeker_info', 'seekerInfo'], {}), ['real_name', 'realName'], '候选人') }}</strong>
-              <span>{{ valueOf(valueOf(resumeDetail, ['seeker_info', 'seekerInfo'], {}), ['edu_back', 'eduBack'], '学历未填写') }}</span>
-            </div>
-          </div>
-          <pre>{{ resumePreviewText }}</pre>
-        </template>
+        <pre v-if="resumeDetail">{{ resumePreviewText || '暂无可预览内容' }}</pre>
       </div>
     </el-dialog>
   </div>
@@ -840,45 +831,8 @@ async function openResume(item) {
   min-height: 260px;
 }
 
-.profile-line {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.profile-avatar {
-  width: 52px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: #ffffff;
-  background: #4f46e5;
-  font-size: 20px;
-  font-weight: 900;
-}
-
-.profile-line strong,
-.profile-line span {
-  display: block;
-}
-
-.profile-line strong {
-  color: #151923;
-  font-size: 17px;
-  font-weight: 900;
-}
-
-.profile-line span {
-  color: #7b8798;
-  font-size: 13px;
-  font-weight: 700;
-}
-
 .resume-detail pre {
-  max-height: 52vh;
+  max-height: 62vh;
   overflow: auto;
   margin: 0;
   padding: 16px;

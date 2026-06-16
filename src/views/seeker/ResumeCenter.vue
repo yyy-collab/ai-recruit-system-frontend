@@ -38,7 +38,7 @@
             <el-icon class="file-icon"><Document /></el-icon>
             <div>
               <strong>{{ valueOf(currentResume, ['resumeFileName', 'resume_file_name'], '我的简历.docx') }}</strong>
-              <span>上次更新：{{ formatDateLoose(valueOf(currentResume, ['createTime', 'create_time'])) }}</span>
+              <span>上次更新：{{ formatDateLoose(valueOf(currentResume, ['updateTime', 'update_time', 'createTime', 'create_time'])) }}</span>
             </div>
             <em>{{ parseStatusText(valueOf(currentResume, ['isParsed', 'is_parsed'])) }}</em>
           </div>
@@ -136,7 +136,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import {
   Document,
   Download,
@@ -144,7 +144,6 @@ import {
   View,
 } from '@element-plus/icons-vue';
 import {
-  deleteResume,
   getMyResumeList,
   getResumeAiDetail,
   previewResume,
@@ -272,23 +271,11 @@ async function handleUploadChange(uploadFile) {
     return;
   }
 
-  if (currentResume.value) {
-    try {
-      await ElMessageBox.confirm('当前账号已上传过简历，需要删除旧简历后再上传新文件。是否继续？', '更新简历', {
-        confirmButtonText: '删除并上传',
-        cancelButtonText: '取消',
-        type: 'warning',
-      });
-      await deleteResume(valueOf(currentResume.value, ['resumeId', 'resume_id']));
-    } catch (error) {
-      return;
-    }
-  }
-
   uploading.value = true;
+  const replacingResume = Boolean(currentResume.value);
   try {
     await uploadResume(file);
-    ElMessage.success('简历上传成功');
+    ElMessage.success(replacingResume ? '简历更新成功' : '简历上传成功');
     await fetchResume();
   } catch (error) {
     ElMessage.error(error?.msg || '上传失败');

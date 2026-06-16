@@ -25,6 +25,7 @@ export const errorMessages = {
   10022: '邮箱未注册或验证码错误/过期',
   10023: '密码修改成功，需要重新登录',
   10024: 'HR名下还有上线岗位，无法注销',
+  10025: '当前还有待处理投递，需等所有投递记录都被处理后才能更新简历',
 };
 
 export function getErrorMessage(code, defaultMsg = '操作失败') {
