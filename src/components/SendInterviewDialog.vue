@@ -205,7 +205,7 @@ async function submit() {
       remark: form.remark,
     });
     ElMessage.success('面试邀请已发送');
-    emit('success');
+    emit('success', { deliveryId });
     visible.value = false;
   } finally {
     submitting.value = false;

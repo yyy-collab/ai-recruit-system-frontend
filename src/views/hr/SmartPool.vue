@@ -48,11 +48,21 @@
           <p>投递时间：{{ formatDateTimeLoose(valueOf(item, ['deliveryTime', 'delivery_time'])) }}</p>
         </div>
         <div class="candidate-actions">
-          <div class="match-circle" :style="matchCircleStyle(item)">{{ matchScoreNum(item) }}</div>
+          <div class="decision-actions">
+            <el-button type="success" plain :disabled="isApproveDisabled(item)" @click.stop="approve(item)">
+              单独通过
+            </el-button>
+            <el-button type="danger" plain :disabled="isRejectDisabled(item)" @click.stop="reject(item)">
+              淘汰
+            </el-button>
+          </div>
+          <div class="match-score-panel">
+            <span class="match-score-label">匹配度</span>
+            <div class="match-circle" :style="matchCircleStyle(item)">{{ matchScoreNum(item) }}</div>
+          </div>
           <el-button
             type="primary"
             :icon="Message"
-            :disabled="Number(valueOf(item, 'status')) === 3"
             @click.stop="openInvite(item)"
           >
             发送邀请
@@ -81,7 +91,7 @@
     <SendInterviewDialog
       v-model="inviteVisible"
       :candidate="activeCandidate"
-      @success="fetchDeliveries"
+      @success="handleInviteSuccess"
     />
 
     <el-dialog v-model="resumeVisible" class="resume-dialog" width="760px" align-center>
@@ -109,6 +119,7 @@ import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Message } from '@element-plus/icons-vue';
 import SendInterviewDialog from '@/components/SendInterviewDialog.vue';
+import { recalculateMatch } from '@/api/modules/ai';
 import { getDeliveryDetail, getDeliveryList, updateDeliveryStatus, batchUpdateDeliveryStatus } from '@/api/modules/delivery';
 import { getMyJobList } from '@/api/modules/job';
 import {
@@ -141,6 +152,8 @@ const activeCandidate = ref({});
 const resumeVisible = ref(false);
 const resumeLoading = ref(false);
 const resumeDetail = ref(null);
+const sentInviteIds = ref([]);
+const recalculatedMatchIds = ref([]);
 
 const allSelected = computed({
   get() {
@@ -206,12 +219,62 @@ async function fetchDeliveries() {
     deliveries.value = pageItems(res.data);
     total.value = pageTotal(res.data);
     selectedDeliveryIds.value = [];
+    await backfillMissingMatchScores();
   } catch (error) {
     deliveries.value = [];
     total.value = 0;
     ElMessage.error(error?.msg || '获取候选人失败');
   } finally {
     loading.value = false;
+  }
+}
+
+function hasMatchScore(item) {
+  const raw = valueOf(item, ['matchScore', 'match_score'], undefined);
+  if (raw === '' || raw === undefined || raw === null || raw === false) return false;
+
+  const num = Number(raw);
+  return Number.isFinite(num) && num >= 0 && num <= 100;
+}
+
+async function backfillMissingMatchScores() {
+  const missingItems = deliveries.value.filter((item) => {
+    const deliveryId = deliveryIdOf(item);
+    return deliveryId && !hasMatchScore(item) && !recalculatedMatchIds.value.includes(String(deliveryId));
+  });
+
+  if (!missingItems.length) return;
+
+  const missingIds = missingItems.map((item) => String(deliveryIdOf(item)));
+  recalculatedMatchIds.value = [...new Set([...recalculatedMatchIds.value, ...missingIds])];
+
+  const results = await Promise.allSettled(
+    missingItems.map((item) => recalculateMatch(deliveryIdOf(item))),
+  );
+
+  let hasUpdate = false;
+  results.forEach((result, index) => {
+    if (result.status !== 'fulfilled') return;
+
+    const item = missingItems[index];
+    const score = valueOf(result.value?.data, ['match_score', 'matchScore'], undefined);
+    const level = valueOf(result.value?.data, ['match_level', 'matchLevel'], undefined);
+
+    if (score !== undefined && score !== null && score !== '') {
+      item.match_score = score;
+      item.matchScore = score;
+      hasUpdate = true;
+    }
+
+    if (level !== undefined && level !== null && level !== '') {
+      item.match_level = level;
+      item.matchLevel = level;
+      hasUpdate = true;
+    }
+  });
+
+  if (hasUpdate) {
+    deliveries.value = [...deliveries.value];
   }
 }
 
@@ -229,6 +292,40 @@ function candidateNameOf(item) {
   return valueOf(item, ['seekerName', 'seeker_name'], '候选人');
 }
 
+function statusOf(item) {
+  const rawStatus = Number(valueOf(item, 'status'));
+  return Number.isFinite(rawStatus) ? rawStatus : -1;
+}
+
+function isInviteSent(item) {
+  const rawFlag = valueOf(
+    item,
+    ['inviteSent', 'invite_sent', 'interviewSent', 'interview_sent', 'hasInterview', 'has_interview', 'hasInterviewInvite', 'has_interview_invite'],
+    undefined,
+  );
+  const deliveryId = deliveryIdOf(item);
+
+  if (statusOf(item) === 3) return true;
+  if (typeof rawFlag === 'string') {
+    const normalized = rawFlag.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'sent'].includes(normalized)) return true;
+  } else if (rawFlag !== undefined && rawFlag !== null && rawFlag !== false) {
+    return Boolean(rawFlag);
+  }
+
+  return Boolean(deliveryId) && sentInviteIds.value.includes(String(deliveryId));
+}
+
+function isApproveDisabled(item) {
+  const status = statusOf(item);
+  return status === 1 || isInviteSent(item);
+}
+
+function isRejectDisabled(item) {
+  const status = statusOf(item);
+  return status === 2 || isInviteSent(item);
+}
+
 function matchScoreNum(item) {
   const raw = valueOf(item, ['matchScore', 'match_score']);
   if (raw === '' || raw === undefined || raw === null || raw === false) return '--';
@@ -239,10 +336,18 @@ function matchScoreNum(item) {
 
 function matchCircleStyle(item) {
   const num = Number(matchScoreNum(item));
-  if (!Number.isFinite(num)) return { background: '#c0c4cc' };
-  if (num >= 80) return { background: '#22c55e' };
-  if (num >= 50) return { background: '#f59e0b' };
-  return { background: '#ef4444' };
+  if (!Number.isFinite(num)) {
+    return {
+      background: 'linear-gradient(135deg, #cfd5e6 0%, #b9c0d4 100%)',
+      boxShadow: '0 12px 24px rgba(79, 70, 229, 0.12)',
+    };
+  }
+
+  const shadowOpacity = num >= 80 ? 0.28 : num >= 50 ? 0.22 : 0.16;
+  return {
+    background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+    boxShadow: `0 12px 24px rgba(79, 70, 229, ${shadowOpacity})`,
+  };
 }
 
 function statusTextOf(item) {
@@ -256,7 +361,11 @@ function statusTextOf(item) {
 }
 
 async function openInvite(item) {
-  const status = Number(valueOf(item, 'status'));
+  const status = statusOf(item);
+  if (isInviteSent(item)) {
+    ElMessage.warning('该求职者已发送过邀请');
+    return;
+  }
   if (status !== 1) {
     ElMessage.warning('只有已通过候选人才能发送面试邀请');
     return;
@@ -339,6 +448,17 @@ async function batchReject() {
     if (error?.message === 'cancel' || error?.message === 'close') return;
     ElMessage.error(error?.msg || '批量淘汰失败');
   }
+}
+
+async function handleInviteSuccess(payload) {
+  const deliveryId = payload?.deliveryId || deliveryIdOf(activeCandidate.value);
+  if (deliveryId) {
+    const normalizedId = String(deliveryId);
+    if (!sentInviteIds.value.includes(normalizedId)) {
+      sentInviteIds.value = [...sentInviteIds.value, normalizedId];
+    }
+  }
+  await fetchDeliveries();
 }
 
 function normalizeTextList(value) {
@@ -520,17 +640,43 @@ async function openResume(item) {
   font-weight: 700;
 }
 
+.match-score-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.match-score-label {
+  color: #758198;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
 .match-circle {
-  width: 48px;
-  height: 48px;
+  width: 58px;
+  height: 58px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.36);
   color: #ffffff;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 900;
   flex-shrink: 0;
+}
+
+.decision-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decision-actions .el-button {
+  min-width: 92px;
+  margin-left: 0;
 }
 
 .candidate-actions {
@@ -654,7 +800,13 @@ async function openResume(item) {
 
   .candidate-actions {
     grid-column: 2;
+    align-items: flex-start;
+    flex-wrap: wrap;
     justify-content: flex-start;
+  }
+
+  .decision-actions {
+    flex-direction: row;
   }
 }
 </style>

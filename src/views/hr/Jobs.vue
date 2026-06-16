@@ -40,7 +40,7 @@
         <el-table-column prop="work_address" label="工作地点" width="140" />
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="jobStatusTagType(row)">
+            <el-tag :class="['job-status-tag', jobStatusOf(row) === 1 ? 'is-open' : 'is-closed']">
               {{ jobStatusText(row) }}
             </el-tag>
           </template>
@@ -87,7 +87,7 @@
             <h2>{{ jobNameOf(activeJob) }}</h2>
             <p>{{ salaryOf(activeJob) }} · {{ workAddressOf(activeJob) }}</p>
           </div>
-          <el-tag :type="jobStatusTagType(activeJob)" size="large">
+          <el-tag :class="['job-status-tag', jobStatusOf(activeJob) === 1 ? 'is-open' : 'is-closed']" size="large">
             {{ jobStatusText(activeJob) }}
           </el-tag>
         </div>
@@ -266,9 +266,16 @@ onMounted(loadJobs);
 
 <style scoped>
 .hr-jobs-page {
+  --page-accent: #4f46e5;
+  --page-accent-dark: #4338ca;
+  --page-accent-soft: #eef0ff;
+  --page-border: #e6e8f2;
+  --page-text: #1f2540;
+  --page-subtle: #677489;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  padding: 24px 0 32px;
 }
 
 .toolbar {
@@ -276,7 +283,14 @@ onMounted(loadJobs);
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
+  padding: 22px 24px;
+  border: 1px solid var(--page-border);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(255, 255, 255, 0.96) 34%),
+    #ffffff;
+  box-shadow: 0 16px 36px rgba(31, 37, 64, 0.06);
 }
 
 .toolbar-left {
@@ -292,33 +306,122 @@ onMounted(loadJobs);
   gap: 12px;
 }
 
+.toolbar-right :deep(.el-input__wrapper),
+.toolbar-right :deep(.el-select__wrapper) {
+  min-height: 44px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--page-border) inset;
+  transition: box-shadow 0.2s ease;
+}
+
+.toolbar-right :deep(.el-input__wrapper.is-focus),
+.toolbar-right :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--page-accent) inset, 0 0 0 4px rgba(79, 70, 229, 0.12);
+}
+
+.hr-jobs-page :deep(.el-button--primary:not(.is-link)) {
+  border-color: var(--page-accent);
+  background: var(--page-accent);
+}
+
+.hr-jobs-page :deep(.el-button--primary:not(.is-link):hover),
+.hr-jobs-page :deep(.el-button--primary:not(.is-link):focus-visible) {
+  border-color: var(--page-accent-dark);
+  background: var(--page-accent-dark);
+}
+
 .summary-panel {
   display: flex;
-  gap: 20px;
-  align-items: center;
-  padding: 16px 0;
-  color: #333;
-  font-size: 14px;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.summary-panel div {
+  min-width: 136px;
+  padding: 16px 18px;
+  border: 1px solid var(--page-border);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(31, 37, 64, 0.05);
+  color: var(--page-text);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .job-card {
-  padding: 20px;
+  border: 1px solid var(--page-border);
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(31, 37, 64, 0.06);
+}
+
+.job-card :deep(.el-card__body) {
+  padding: 22px 20px 16px;
+}
+
+.job-card :deep(.el-table) {
+  --el-table-border-color: #e9ecf7;
+  --el-table-header-bg-color: #f7f8fe;
+  --el-table-row-hover-bg-color: #f8f9ff;
+}
+
+.job-card :deep(.el-table th.el-table__cell) {
+  color: #55627c;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.job-card :deep(.el-table td.el-table__cell) {
+  color: #465268;
+}
+
+.job-card :deep(.el-table .cell) {
+  line-height: 1.5;
 }
 
 .job-name-button {
   padding: 0;
   font-size: 15px;
   font-weight: 700;
+  color: var(--page-accent);
 }
 
 .job-name-button:hover {
+  color: var(--page-accent-dark);
   text-decoration: underline;
+}
+
+.job-status-tag {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.job-status-tag.is-open {
+  color: var(--page-accent);
+  border-color: rgba(79, 70, 229, 0.18);
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.job-status-tag.is-closed {
+  color: #7a869d;
+  border-color: #d7dce8;
+  background: #f4f6fb;
 }
 
 .pagination-wrapper {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
+  margin-top: 18px;
+}
+
+.pagination-wrapper :deep(.btn-prev),
+.pagination-wrapper :deep(.btn-next),
+.pagination-wrapper :deep(.el-pager li) {
+  border-radius: 10px;
+}
+
+.pagination-wrapper :deep(.el-pager li.is-active) {
+  background: var(--page-accent);
+  color: #ffffff;
 }
 
 .job-detail-header {
@@ -331,18 +434,28 @@ onMounted(loadJobs);
 
 .job-detail-header h2 {
   margin: 0;
-  color: #1f2d3d;
+  color: var(--page-text);
   font-size: 24px;
   font-weight: 700;
 }
 
 .job-detail-header p {
   margin: 8px 0 0;
-  color: #606266;
+  color: var(--page-subtle);
 }
 
 .job-detail-meta {
   margin-bottom: 20px;
+}
+
+.job-detail-meta :deep(.el-descriptions__label) {
+  color: #5f6c84;
+  font-weight: 700;
+  background: #f7f8fe;
+}
+
+.job-detail-meta :deep(.el-descriptions__content) {
+  color: #364154;
 }
 
 .job-detail-section + .job-detail-section {
@@ -351,7 +464,7 @@ onMounted(loadJobs);
 
 .job-detail-section h3 {
   margin: 0 0 12px;
-  color: #1f2d3d;
+  color: var(--page-text);
   font-size: 16px;
   font-weight: 700;
 }
@@ -360,6 +473,12 @@ onMounted(loadJobs);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.keyword-tag {
+  color: var(--page-accent);
+  border-color: rgba(79, 70, 229, 0.16);
+  background: rgba(79, 70, 229, 0.08);
 }
 
 .job-detail-text,
@@ -374,8 +493,42 @@ onMounted(loadJobs);
   color: #909399;
 }
 
+.job-detail-dialog :deep(.el-dialog) {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.job-detail-dialog :deep(.el-dialog__header) {
+  margin-right: 0;
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid #eceffd;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(255, 255, 255, 0.98));
+}
+
+.job-detail-dialog :deep(.el-dialog__title) {
+  color: var(--page-text);
+  font-size: 20px;
+  font-weight: 800;
+}
+
 .job-detail-dialog :deep(.el-dialog__body) {
+  padding: 20px 24px 24px;
   max-height: 70vh;
   overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .toolbar {
+    align-items: stretch;
+    padding: 18px;
+  }
+
+  .toolbar-right {
+    width: 100%;
+  }
+
+  .summary-panel div {
+    flex: 1 1 160px;
+  }
 }
 </style>
