@@ -147,6 +147,7 @@ const loading = ref(false);
 const pageNum = ref(1);
 const pageSize = 8;
 const total = ref(0);
+const allDeliveryStatuses = [0, 1, 2, 3];
 const inviteVisible = ref(false);
 const activeCandidate = ref({});
 const resumeVisible = ref(false);
@@ -209,15 +210,19 @@ async function fetchDeliveries() {
   }
   loading.value = true;
   try {
-    const res = await getDeliveryList({
-      jobId: selectedJobId.value,
-      pageNum: pageNum.value,
-      pageSize,
-      status: activeStatus.value,
-      sort: 'match_score_desc',
-    });
-    deliveries.value = pageItems(res.data);
-    total.value = pageTotal(res.data);
+    if (activeStatus.value === undefined) {
+      await fetchAllStatusDeliveries();
+    } else {
+      const res = await getDeliveryList({
+        jobId: selectedJobId.value,
+        pageNum: pageNum.value,
+        pageSize,
+        status: activeStatus.value,
+        sort: 'match_score_desc',
+      });
+      deliveries.value = pageItems(res.data);
+      total.value = pageTotal(res.data);
+    }
     selectedDeliveryIds.value = [];
     await backfillMissingMatchScores();
   } catch (error) {
@@ -227,6 +232,44 @@ async function fetchDeliveries() {
   } finally {
     loading.value = false;
   }
+}
+
+async function fetchAllStatusDeliveries() {
+  const results = await Promise.allSettled(
+    allDeliveryStatuses.map((status) => getDeliveryList({
+      jobId: selectedJobId.value,
+      pageNum: 1,
+      pageSize: 200,
+      status,
+      sort: 'match_score_desc',
+    })),
+  );
+
+  const mergedMap = new Map();
+  results.forEach((result) => {
+    if (result.status !== 'fulfilled') return;
+    pageItems(result.value.data).forEach((item) => {
+      const deliveryId = deliveryIdOf(item);
+      if (!deliveryId) return;
+      mergedMap.set(String(deliveryId), item);
+    });
+  });
+
+  const mergedItems = Array.from(mergedMap.values()).sort((left, right) => {
+    const leftScore = Number(valueOf(left, ['matchScore', 'match_score'], -1));
+    const rightScore = Number(valueOf(right, ['matchScore', 'match_score'], -1));
+    const safeLeftScore = Number.isFinite(leftScore) ? leftScore : -1;
+    const safeRightScore = Number.isFinite(rightScore) ? rightScore : -1;
+    if (safeRightScore !== safeLeftScore) return safeRightScore - safeLeftScore;
+
+    const leftTime = new Date(valueOf(left, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+    const rightTime = new Date(valueOf(right, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+    return rightTime - leftTime;
+  });
+
+  total.value = mergedItems.length;
+  const start = (pageNum.value - 1) * pageSize;
+  deliveries.value = mergedItems.slice(start, start + pageSize);
 }
 
 function hasMatchScore(item) {
@@ -316,14 +359,29 @@ function isInviteSent(item) {
   return Boolean(deliveryId) && sentInviteIds.value.includes(String(deliveryId));
 }
 
-function isApproveDisabled(item) {
+function hasFinalDecision(item) {
   const status = statusOf(item);
-  return status === 1 || isInviteSent(item);
+  return status === 1 || status === 2;
+}
+
+function isApproveDisabled(item) {
+  return hasFinalDecision(item) || isInviteSent(item);
 }
 
 function isRejectDisabled(item) {
-  const status = statusOf(item);
-  return status === 2 || isInviteSent(item);
+  return hasFinalDecision(item) || isInviteSent(item);
+}
+
+function itemByDeliveryId(deliveryId) {
+  return deliveries.value.find((item) => String(deliveryIdOf(item)) === String(deliveryId));
+}
+
+function selectableIdsFor(action) {
+  const disabledCheck = action === 'approve' ? isApproveDisabled : isRejectDisabled;
+  return selectedDeliveryIds.value.filter((deliveryId) => {
+    const item = itemByDeliveryId(deliveryId);
+    return item && !disabledCheck(item);
+  });
 }
 
 function matchScoreNum(item) {
@@ -360,6 +418,31 @@ function statusTextOf(item) {
   return map[Number(valueOf(item, 'status'))] || '未知';
 }
 
+function setLocalDeliveryStatus(deliveryId, status) {
+  let changed = false;
+  deliveries.value.forEach((item) => {
+    if (String(deliveryIdOf(item)) !== String(deliveryId)) return;
+    item.status = status;
+    changed = true;
+  });
+  if (changed) {
+    deliveries.value = [...deliveries.value];
+  }
+}
+
+function setLocalBatchStatus(deliveryIds, status) {
+  const idSet = new Set(deliveryIds.map((id) => String(id)));
+  let changed = false;
+  deliveries.value.forEach((item) => {
+    if (!idSet.has(String(deliveryIdOf(item)))) return;
+    item.status = status;
+    changed = true;
+  });
+  if (changed) {
+    deliveries.value = [...deliveries.value];
+  }
+}
+
 async function openInvite(item) {
   const status = statusOf(item);
   if (isInviteSent(item)) {
@@ -383,10 +466,22 @@ async function openInvite(item) {
 async function approve(item) {
   const deliveryId = deliveryIdOf(item);
   if (!deliveryId) return;
+  if (statusOf(item) === 2) {
+    ElMessage.warning('已淘汰的候选人不可再次通过');
+    return;
+  }
+  if (statusOf(item) === 1) {
+    ElMessage.warning('该候选人已通过');
+    return;
+  }
+  if (isInviteSent(item)) {
+    ElMessage.warning('已发送邀请的候选人不可再次更改状态');
+    return;
+  }
   try {
     await updateDeliveryStatus({ delivery_id: deliveryId, status: 1, comment: '' });
     ElMessage.success('已通过候选人');
-    await fetchDeliveries();
+    setLocalDeliveryStatus(deliveryId, 1);
   } catch (error) {
     ElMessage.error(error?.msg || '通过失败');
   }
@@ -397,11 +492,19 @@ async function batchApprove() {
     ElMessage.warning('请先选择候选人');
     return;
   }
+  const deliveryIds = selectableIdsFor('approve');
+  if (!deliveryIds.length) {
+    ElMessage.warning('所选候选人中没有可通过的记录');
+    return;
+  }
   try {
-    await batchUpdateDeliveryStatus({ delivery_ids: selectedDeliveryIds.value, status: 1 });
+    if (deliveryIds.length !== selectedDeliveryIds.value.length) {
+      ElMessage.warning('已通过、已淘汰或已发送邀请的候选人已自动跳过');
+    }
+    await batchUpdateDeliveryStatus({ delivery_ids: deliveryIds, status: 1 });
     ElMessage.success('已批量通过候选人');
+    setLocalBatchStatus(deliveryIds, 1);
     selectedDeliveryIds.value = [];
-    await fetchDeliveries();
   } catch (error) {
     ElMessage.error(error?.msg || '批量通过失败');
   }
@@ -410,6 +513,18 @@ async function batchApprove() {
 async function reject(item) {
   const deliveryId = deliveryIdOf(item);
   if (!deliveryId) return;
+  if (statusOf(item) === 1) {
+    ElMessage.warning('已通过的候选人不可再次淘汰');
+    return;
+  }
+  if (statusOf(item) === 2) {
+    ElMessage.warning('该候选人已淘汰');
+    return;
+  }
+  if (isInviteSent(item)) {
+    ElMessage.warning('已发送邀请的候选人不可再次更改状态');
+    return;
+  }
   try {
     const { value } = await ElMessageBox.prompt('请输入淘汰原因', '淘汰候选人', {
       confirmButtonText: '确认淘汰',
@@ -420,7 +535,7 @@ async function reject(item) {
     });
     await updateDeliveryStatus({ delivery_id: deliveryId, status: 2, comment: value.trim() });
     ElMessage.success('已淘汰候选人');
-    await fetchDeliveries();
+    setLocalDeliveryStatus(deliveryId, 2);
   } catch (error) {
     if (error?.message === 'cancel' || error?.message === 'close') return;
     ElMessage.error(error?.msg || '淘汰失败');
@@ -432,6 +547,11 @@ async function batchReject() {
     ElMessage.warning('请先选择候选人');
     return;
   }
+  const deliveryIds = selectableIdsFor('reject');
+  if (!deliveryIds.length) {
+    ElMessage.warning('所选候选人中没有可淘汰的记录');
+    return;
+  }
   try {
     const { value } = await ElMessageBox.prompt('请输入批量淘汰原因', '批量淘汰候选人', {
       confirmButtonText: '确认淘汰',
@@ -440,10 +560,13 @@ async function batchReject() {
       inputErrorMessage: '淘汰原因不能为空',
       inputValue: '不符合岗位要求',
     });
-    await batchUpdateDeliveryStatus({ delivery_ids: selectedDeliveryIds.value, status: 2, reject_reason: value.trim() });
+    if (deliveryIds.length !== selectedDeliveryIds.value.length) {
+      ElMessage.warning('已通过、已淘汰或已发送邀请的候选人已自动跳过');
+    }
+    await batchUpdateDeliveryStatus({ delivery_ids: deliveryIds, status: 2, reject_reason: value.trim() });
     ElMessage.success('已批量淘汰候选人');
+    setLocalBatchStatus(deliveryIds, 2);
     selectedDeliveryIds.value = [];
-    await fetchDeliveries();
   } catch (error) {
     if (error?.message === 'cancel' || error?.message === 'close') return;
     ElMessage.error(error?.msg || '批量淘汰失败');
@@ -457,8 +580,8 @@ async function handleInviteSuccess(payload) {
     if (!sentInviteIds.value.includes(normalizedId)) {
       sentInviteIds.value = [...sentInviteIds.value, normalizedId];
     }
+    setLocalDeliveryStatus(deliveryId, 3);
   }
-  await fetchDeliveries();
 }
 
 function normalizeTextList(value) {
