@@ -30,8 +30,16 @@ export const useUserStore = defineStore('user', {
       this.userInfo = { ...this.userInfo, ...info };
       // 持久化用户名、头像等（不存敏感信息）
       const persistData = {
+        id: this.userInfo.id,
+        user_id: this.userInfo.user_id,
+        userId: this.userInfo.userId,
+        hr_id: this.userInfo.hr_id,
+        hrId: this.userInfo.hrId,
+        seeker_id: this.userInfo.seeker_id,
+        seekerId: this.userInfo.seekerId,
         username: this.userInfo.username,
         real_name: this.userInfo.real_name,
+        realName: this.userInfo.realName,
         avatar_url: this.userInfo.avatar_url,
       };
       localStorage.setItem('user_info', JSON.stringify(persistData));

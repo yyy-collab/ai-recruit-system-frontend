@@ -1,5 +1,6 @@
 <template>
   <el-dialog
+    class="message-detail-dialog"
     title="面试邀请详情"
     v-model="visible"
     width="560px"
@@ -106,3 +107,53 @@ const getStatusType = (status) => {
   return 'info'
 }
 </script>
+
+<style scoped>
+:global(.message-detail-dialog) {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+:global(.message-detail-dialog .el-dialog__header) {
+  margin-right: 0;
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid #eceffd;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(255, 255, 255, 0.98));
+}
+
+:global(.message-detail-dialog .el-dialog__title) {
+  color: #1f2540;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+:global(.message-detail-dialog .el-dialog__body) {
+  padding: 20px 24px;
+}
+
+:global(.message-detail-dialog .el-dialog__footer) {
+  padding: 14px 24px 22px;
+}
+
+:deep(.el-descriptions__label) {
+  width: 128px;
+  color: #5f6c84;
+  font-weight: 700;
+  background: #f7f8fe;
+}
+
+:deep(.el-descriptions__content) {
+  color: #1f2540;
+}
+
+:global(.message-detail-dialog .el-dialog__footer .el-button--primary) {
+  border-color: #4f46e5;
+  background: #4f46e5;
+}
+
+:global(.message-detail-dialog .el-dialog__footer .el-button--primary:hover),
+:global(.message-detail-dialog .el-dialog__footer .el-button--primary:focus-visible) {
+  border-color: #4338ca;
+  background: #4338ca;
+}
+</style>

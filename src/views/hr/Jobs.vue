@@ -29,13 +29,19 @@
         border
         style="width: 100%;"
       >
-        <el-table-column prop="job_name" label="岗位名称" min-width="180" />
+        <el-table-column label="岗位名称" min-width="220">
+          <template #default="{ row }">
+            <el-button link type="primary" class="job-name-button" @click="openJobDetail(row)">
+              {{ jobNameOf(row) }}
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="salary" label="薪资" width="120" />
         <el-table-column prop="work_address" label="工作地点" width="140" />
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'">
-              {{ row.status === 1 ? '已上线' : '已下线' }}
+            <el-tag :class="['job-status-tag', jobStatusOf(row) === 1 ? 'is-open' : 'is-closed']">
+              {{ jobStatusText(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -45,7 +51,7 @@
         <el-table-column label="操作" width="240">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="toggleStatus(row)">
-              {{ row.status === 1 ? '下线' : '上线' }}
+              {{ jobStatusOf(row) === 1 ? '下线' : '上线' }}
             </el-button>
             <el-button type="danger" size="small" @click="handleDelete(row)" style="margin-left: 8px;">
               删除
@@ -67,6 +73,55 @@
         />
       </div>
     </el-card>
+
+    <el-dialog
+      v-model="detailVisible"
+      title="岗位详情"
+      width="760px"
+      class="job-detail-dialog"
+      align-center
+    >
+      <template v-if="activeJob">
+        <div class="job-detail-header">
+          <div>
+            <h2>{{ jobNameOf(activeJob) }}</h2>
+            <p>{{ salaryOf(activeJob) }} · {{ workAddressOf(activeJob) }}</p>
+          </div>
+          <el-tag :class="['job-status-tag', jobStatusOf(activeJob) === 1 ? 'is-open' : 'is-closed']" size="large">
+            {{ jobStatusText(activeJob) }}
+          </el-tag>
+        </div>
+
+        <el-descriptions :column="2" border class="job-detail-meta">
+          <el-descriptions-item label="薪资">{{ salaryOf(activeJob) }}</el-descriptions-item>
+          <el-descriptions-item label="工作地点">{{ workAddressOf(activeJob) }}</el-descriptions-item>
+          <el-descriptions-item label="工作经验">{{ workExperienceOf(activeJob) }}</el-descriptions-item>
+          <el-descriptions-item label="投递数">{{ deliveryCountOf(activeJob) }}</el-descriptions-item>
+          <el-descriptions-item label="发布时间">{{ createTimeOf(activeJob) || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ updateTimeOf(activeJob) || '-' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <section class="job-detail-section">
+          <h3>核心关键词</h3>
+          <div v-if="jobKeywords(activeJob).length" class="job-keywords">
+            <el-tag v-for="keyword in jobKeywords(activeJob)" :key="keyword" effect="plain" class="keyword-tag">
+              {{ keyword }}
+            </el-tag>
+          </div>
+          <p v-else class="empty-text">暂无</p>
+        </section>
+
+        <section class="job-detail-section">
+          <h3>岗位描述</h3>
+          <p class="job-detail-text">{{ jobDescOf(activeJob) }}</p>
+        </section>
+
+        <section class="job-detail-section">
+          <h3>任职要求</h3>
+          <p class="job-detail-text">{{ requirementOf(activeJob) }}</p>
+        </section>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -75,6 +130,7 @@ import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getMyJobList, changeJobStatus, deleteJob } from '@/api/modules/job';
+import { formatDateTimeLoose, valueOf } from '@/utils/view';
 
 const router = useRouter();
 const jobs = ref([]);
@@ -82,6 +138,8 @@ const loading = ref(false);
 const total = ref(0);
 const onlineCount = ref(0);
 const offlineCount = ref(0);
+const detailVisible = ref(false);
+const activeJob = ref(null);
 
 const pagination = reactive({
   pageNum: 1,
@@ -92,6 +150,28 @@ const filters = reactive({
   job_name: '',
   status: '',
 });
+
+const jobField = (job, keys, fallback = '') => valueOf(job, keys, fallback);
+const jobNameOf = (job) => jobField(job, ['job_name', 'jobName'], '未命名岗位');
+const salaryOf = (job) => jobField(job, 'salary', '面议');
+const workAddressOf = (job) => jobField(job, ['work_address', 'workAddress'], '不限地点');
+const workExperienceOf = (job) => jobField(job, ['work_experience', 'workExperience'], '经验不限');
+const deliveryCountOf = (job) => Number(jobField(job, ['delivery_count', 'deliveryCount'], 0) || 0);
+const jobDescOf = (job) => jobField(job, ['job_desc', 'jobDesc'], '暂无岗位描述');
+const requirementOf = (job) => jobField(job, 'requirement', '暂无任职要求');
+const createTimeOf = (job) => formatDateTimeLoose(jobField(job, ['create_time', 'createTime']));
+const updateTimeOf = (job) => formatDateTimeLoose(jobField(job, ['update_time', 'updateTime']));
+const jobStatusOf = (job) => Number(jobField(job, 'status', 0));
+const jobStatusText = (job) => (jobStatusOf(job) === 1 ? '已上线' : '已下线');
+const jobStatusTagType = (job) => (jobStatusOf(job) === 1 ? 'success' : 'info');
+
+const jobKeywords = (job) => {
+  const keywords = jobField(job, 'keywords', '');
+  return String(keywords)
+    .split(/[\s,，/]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+};
 
 const loadJobs = async () => {
   loading.value = true;
@@ -133,11 +213,16 @@ const handleSizeChange = (size) => {
   loadJobs();
 };
 
+const openJobDetail = (row) => {
+  activeJob.value = { ...row };
+  detailVisible.value = true;
+};
+
 const toggleStatus = async (row) => {
-  const targetStatus = row.status === 1 ? 0 : 1;
+  const targetStatus = jobStatusOf(row) === 1 ? 0 : 1;
   try {
     await ElMessageBox.confirm(
-      `确定要将岗位「${row.job_name}」${targetStatus === 1 ? '上线' : '下线'}吗？`,
+      `确定要将岗位「${jobNameOf(row)}」${targetStatus === 1 ? '上线' : '下线'}吗？`,
       '请确认',
       { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
     );
@@ -156,7 +241,7 @@ const toggleStatus = async (row) => {
 const handleDelete = async (row) => {
   try {
     await ElMessageBox.confirm(
-      `确定删除岗位「${row.job_name}」吗？删除后无法恢复。`,
+      `确定删除岗位「${jobNameOf(row)}」吗？删除后无法恢复。`,
       '删除确认',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     );
@@ -181,9 +266,16 @@ onMounted(loadJobs);
 
 <style scoped>
 .hr-jobs-page {
+  --page-accent: #4f46e5;
+  --page-accent-dark: #4338ca;
+  --page-accent-soft: #eef0ff;
+  --page-border: #e6e8f2;
+  --page-text: #1f2540;
+  --page-subtle: #677489;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  padding: 24px 0 32px;
 }
 
 .toolbar {
@@ -191,7 +283,14 @@ onMounted(loadJobs);
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
+  padding: 22px 24px;
+  border: 1px solid var(--page-border);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(255, 255, 255, 0.96) 34%),
+    #ffffff;
+  box-shadow: 0 16px 36px rgba(31, 37, 64, 0.06);
 }
 
 .toolbar-left {
@@ -207,22 +306,229 @@ onMounted(loadJobs);
   gap: 12px;
 }
 
+.toolbar-right :deep(.el-input__wrapper),
+.toolbar-right :deep(.el-select__wrapper) {
+  min-height: 44px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--page-border) inset;
+  transition: box-shadow 0.2s ease;
+}
+
+.toolbar-right :deep(.el-input__wrapper.is-focus),
+.toolbar-right :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--page-accent) inset, 0 0 0 4px rgba(79, 70, 229, 0.12);
+}
+
+.hr-jobs-page :deep(.el-button--primary:not(.is-link)) {
+  border-color: var(--page-accent);
+  background: var(--page-accent);
+}
+
+.hr-jobs-page :deep(.el-button--primary:not(.is-link):hover),
+.hr-jobs-page :deep(.el-button--primary:not(.is-link):focus-visible) {
+  border-color: var(--page-accent-dark);
+  background: var(--page-accent-dark);
+}
+
 .summary-panel {
   display: flex;
-  gap: 20px;
-  align-items: center;
-  padding: 16px 0;
-  color: #333;
-  font-size: 14px;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.summary-panel div {
+  min-width: 136px;
+  padding: 16px 18px;
+  border: 1px solid var(--page-border);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(31, 37, 64, 0.05);
+  color: var(--page-text);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .job-card {
-  padding: 20px;
+  border: 1px solid var(--page-border);
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(31, 37, 64, 0.06);
+}
+
+.job-card :deep(.el-card__body) {
+  padding: 22px 20px 16px;
+}
+
+.job-card :deep(.el-table) {
+  --el-table-border-color: #e9ecf7;
+  --el-table-header-bg-color: #f7f8fe;
+  --el-table-row-hover-bg-color: #f8f9ff;
+}
+
+.job-card :deep(.el-table th.el-table__cell) {
+  color: #55627c;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.job-card :deep(.el-table td.el-table__cell) {
+  color: #465268;
+}
+
+.job-card :deep(.el-table .cell) {
+  line-height: 1.5;
+}
+
+.job-name-button {
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--page-accent);
+}
+
+.job-name-button:hover {
+  color: var(--page-accent-dark);
+  text-decoration: underline;
+}
+
+.job-status-tag {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.job-status-tag.is-open {
+  color: var(--page-accent);
+  border-color: rgba(79, 70, 229, 0.18);
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.job-status-tag.is-closed {
+  color: #7a869d;
+  border-color: #d7dce8;
+  background: #f4f6fb;
 }
 
 .pagination-wrapper {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
+  margin-top: 18px;
+}
+
+.pagination-wrapper :deep(.btn-prev),
+.pagination-wrapper :deep(.btn-next),
+.pagination-wrapper :deep(.el-pager li) {
+  border-radius: 10px;
+}
+
+.pagination-wrapper :deep(.el-pager li.is-active) {
+  background: var(--page-accent);
+  color: #ffffff;
+}
+
+.job-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.job-detail-header h2 {
+  margin: 0;
+  color: var(--page-text);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.job-detail-header p {
+  margin: 8px 0 0;
+  color: var(--page-subtle);
+}
+
+.job-detail-meta {
+  margin-bottom: 20px;
+}
+
+.job-detail-meta :deep(.el-descriptions__label) {
+  color: #5f6c84;
+  font-weight: 700;
+  background: #f7f8fe;
+}
+
+.job-detail-meta :deep(.el-descriptions__content) {
+  color: #364154;
+}
+
+.job-detail-section + .job-detail-section {
+  margin-top: 20px;
+}
+
+.job-detail-section h3 {
+  margin: 0 0 12px;
+  color: var(--page-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.job-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.keyword-tag {
+  color: var(--page-accent);
+  border-color: rgba(79, 70, 229, 0.16);
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.job-detail-text,
+.empty-text {
+  margin: 0;
+  color: #4a4a4a;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.empty-text {
+  color: #909399;
+}
+
+.job-detail-dialog :deep(.el-dialog) {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.job-detail-dialog :deep(.el-dialog__header) {
+  margin-right: 0;
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid #eceffd;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(255, 255, 255, 0.98));
+}
+
+.job-detail-dialog :deep(.el-dialog__title) {
+  color: var(--page-text);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.job-detail-dialog :deep(.el-dialog__body) {
+  padding: 20px 24px 24px;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .toolbar {
+    align-items: stretch;
+    padding: 18px;
+  }
+
+  .toolbar-right {
+    width: 100%;
+  }
+
+  .summary-panel div {
+    flex: 1 1 160px;
+  }
 }
 </style>
