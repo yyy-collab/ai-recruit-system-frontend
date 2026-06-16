@@ -34,24 +34,25 @@
         class="message-item"
         @click="showDetail(item.message_id)"
       >
+        <!-- 头像盒子：flex 实现水平垂直完全居中 -->
         <div class="avatar-wrapper">
+          <!-- item.avatar_url 数据库存储的候选人头像图片地址 -->
           <el-avatar :size="48" :src="item.avatar_url || defaultAvatar">
             {{ getInitials(item.real_name) }}
           </el-avatar>
         </div>
         <div class="message-content">
-          <div class="message-header">
-            <span class="candidate-name">{{ item.real_name }}</span>
-            <el-tag :type="getStatusTagType(item.status)">
-              {{ getStatusText(item.status) }}
-            </el-tag>
-          </div>
           <div class="message-body">
             <div>应聘：{{ item.job_name }}</div>
             <div class="message-desc">{{ getDescription(item) }}</div>
-            <div class="message-time">{{ formatTime(item.create_time) }}</div>
           </div>
         </div>
+        <!-- 右上角状态标签 -->
+        <el-tag class="status-tag" :type="getStatusTagType(item.status)">
+          {{ getStatusText(item.status) }}
+        </el-tag>
+        <!-- 右下角创建时间 -->
+        <div class="create-time">{{ formatTime(item.create_time) }}</div>
       </div>
       <el-empty v-if="(!paginatedList || paginatedList.length === 0) && !loading" description="暂无消息" />
     </div>
@@ -88,15 +89,16 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 const detailVisible = ref(false)
 const currentMessageId = ref(null)
+// 默认占位头像
 const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'
 
-// 获取姓名首字母（用于头像占位）
+// 获取姓名首字母（图片加载失败兜底）
 const getInitials = (name) => {
   if (!name) return 'U'
   return name.charAt(0).toUpperCase()
 }
 
-// 状态文本映射
+// 状态文本
 const getStatusText = (status) => {
   if (status === 0) return '待确认'
   if (status === 1) return '已接受'
@@ -104,14 +106,12 @@ const getStatusText = (status) => {
   return '未知'
 }
 
-// 过滤后的数据（前端过滤）
+// 前端过滤数据逻辑完全保留
 const filteredList = computed(() => {
   let list = rawMessageList.value
-  // 按状态筛选
   if (statusFilter.value !== '') {
     list = list.filter(item => item.status === parseInt(statusFilter.value))
   }
-  // 按关键词筛选
   if (searchKeyword.value.trim()) {
     const kw = searchKeyword.value.trim().toLowerCase()
     list = list.filter(item =>
@@ -128,47 +128,47 @@ const paginatedList = computed(() => {
   return filteredList.value.slice(start, end)
 })
 
-// 获取消息列表（一次性拉取所有，前端分页过滤）
+// 请求接口
 const fetchList = async () => {
   loading.value = true
+  // 补上缺失的 try {
   try {
     const params = { pageNum: 1, pageSize: 999 }
     if (statusFilter.value !== '') params.status = statusFilter.value
     const res = await getHrMessageList(params)
     if (res.code === 0) {
       rawMessageList.value = res.data.list || res.data.items || []
-      // 重置页码
+      // 打印数据调试头像地址
+      console.log('列表全部数据', rawMessageList.value)
+      console.log('第一条数据头像地址', rawMessageList.value[0]?.avatar_url)
       pageNum.value = 1
     } else {
       ElMessage.error(res.msg)
     }
   } catch (error) {
-    console.error(error)
+    console.error('请求失败', error)
   } finally {
     loading.value = false
   }
 }
 
-// 搜索（重置页码，computed会自动重新过滤）
 const handleSearch = () => {
   pageNum.value = 1
 }
 
-// 状态筛选变化时重新拉取数据
 const handleFilterChange = () => {
   pageNum.value = 1
   fetchList()
 }
 
-const handlePageChange = () => {
-  // 页码变化时，displayList 会自动重新计算
-}
+const handlePageChange = () => {}
 
 const showDetail = (messageId) => {
   currentMessageId.value = messageId
   detailVisible.value = true
 }
 
+// tag标签颜色
 const getStatusTagType = (status) => {
   if (status === 0) return 'warning'
   if (status === 1) return 'success'
@@ -176,6 +176,7 @@ const getStatusTagType = (status) => {
   return 'info'
 }
 
+// 描述文案（完全匹配截图展示）
 const getDescription = (item) => {
   if (item.status === 0) return '等待候选人确认'
   if (item.status === 1) return `候选人已接受邀请，面试时间：${item.interview_date} ${item.interview_time}`
@@ -183,6 +184,7 @@ const getDescription = (item) => {
   return ''
 }
 
+// 时间格式化
 const formatTime = (time) => {
   if (!time) return ''
   return time.replace('T', ' ').substring(0, 16)
@@ -203,7 +205,7 @@ onMounted(() => {
   --page-subtle: #677489;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 50px 40px 30px;   /* 上边距加大 */
+  padding: 50px 40px 30px;
 }
 
 .page-header {
@@ -286,8 +288,10 @@ onMounted(() => {
   min-height: 400px;
 }
 
+/* 单条卡片：相对定位，适配右上角标签、右下角时间 */
 .message-item {
   display: flex;
+  align-items: flex-start;
   gap: 16px;
   background: #fff;
   border-radius: 16px;
@@ -297,15 +301,25 @@ onMounted(() => {
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   border: 1px solid var(--page-border);
+  position: relative;
 }
 
 .message-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
+
+/* 核心修改：头像盒子水平垂直居中 */
 .avatar-wrapper {
   flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  /* 水平+垂直双居中 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
 .message-content {
   flex: 1;
   overflow: hidden;
@@ -342,14 +356,28 @@ onMounted(() => {
   color: #666;
 }
 
-.message-time {
+/* 右上角状态标签 */
+.status-tag {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+/* 右下角创建时间 */
+.create-time {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
   font-size: 12px;
   color: #97a1b4;
-  text-align: right;
 }
 
 .pagination {
-  margin-top: 150px;    
+  margin-top: 150px;
   text-align: center;
 }
 :deep(.el-button--primary) {

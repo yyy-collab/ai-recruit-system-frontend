@@ -336,12 +336,10 @@ onMounted(() => {
   font-weight: 800;
   letter-spacing: 0.02em;
 }
-
 .search-wrapper {
   display: flex;
   align-items: center;
 }
-
 .search-input {
   width: 300px;
 }
@@ -390,6 +388,8 @@ onMounted(() => {
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+  padding: 16px;
+  margin-bottom: 16px;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
@@ -422,6 +422,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+  margin-bottom: 14px;
   margin-bottom: 8px;
 }
 
@@ -445,8 +446,10 @@ onMounted(() => {
 }
 
 .message-desc {
-  margin: 6px 0;
+  margin: 8px 0;
   color: #4d5970;
+  margin: 6px 0;
+  color: #666;
 }
 
 .message-time {
