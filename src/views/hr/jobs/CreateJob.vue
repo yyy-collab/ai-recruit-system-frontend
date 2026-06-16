@@ -26,39 +26,6 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="薪资结构" prop="salaryStructure">
-              <el-select v-model="form.salaryStructure" placeholder="请选择薪资结构">
-                <el-option label="月薪" value="月薪" />
-                <el-option label="年薪" value="年薪" />
-                <el-option label="日薪" value="日薪" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-row :gutter="24">
-          <el-col :span="12">
-            <el-form-item label="工作性质" prop="workNature">
-              <el-select v-model="form.workNature" placeholder="请选择工作性质">
-                <el-option label="全职" value="全职" />
-                <el-option label="兼职" value="兼职" />
-                <el-option label="实习" value="实习" />
-                <el-option label="合同制" value="合同制" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="是否急聘" prop="isUrgent">
-              <el-select v-model="form.isUrgent" placeholder="请选择是否急聘">
-                <el-option label="否" value="否" />
-                <el-option label="是" value="是" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-row :gutter="24">
-          <el-col :span="12">
             <el-form-item label="经验要求" prop="workExperience">
               <el-select v-model="form.workExperience" placeholder="请选择经验要求">
                 <el-option label="不限" value="不限" />
@@ -67,6 +34,17 @@
                 <el-option label="3-5年" value="3-5年" />
                 <el-option label="5年以上" value="5年以上" />
               </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="24">
+          <el-col :span="24">
+            <el-form-item label="核心关键词" prop="keywords">
+              <el-input
+                v-model="form.keywords"
+                placeholder="例如：Java,Vue,前端开发"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -85,6 +63,7 @@
             </el-alert>
           </el-col>
         </el-row>
+
         <el-row :gutter="24">
           <el-col :span="24">
             <el-form-item label="岗位描述" prop="jobDesc">
@@ -111,20 +90,6 @@
           </el-col>
         </el-row>
 
-        <el-row :gutter="24">
-          <el-col :span="24">
-            <el-form-item label="核心关键词" prop="keywords">
-              <el-input
-                v-model="form.keywords"
-                placeholder="例如：Java,Vue,前端开发"
-              />
-              <template #hint>
-                填写便于搜索的关键词，多个关键词用英文逗号分隔。
-              </template>
-            </el-form-item>
-          </el-col>
-        </el-row>
-
         <el-form-item class="form-actions">
           <el-button @click="cancel">取消</el-button>
           <el-button
@@ -142,7 +107,7 @@
 <script setup>
 import { ref, reactive, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElForm, ElMessage } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { addJob } from '@/api/modules/job';
 import { useUserStore } from '@/stores/user';
 
@@ -156,9 +121,6 @@ const form = reactive({
   requirement: '',
   keywords: '',
   salary: '',
-  salaryStructure: '',
-  workNature: '',
-  isUrgent: '',
   workAddress: '',
   workExperience: '',
 });
@@ -174,9 +136,6 @@ const isProfileComplete = computed(() => {
 const rules = {
   jobName: [{ required: true, message: '请输入职位名称', trigger: 'blur' }],
   salary: [{ required: true, message: '请输入薪资范围', trigger: 'blur' }],
-  salaryStructure: [{ required: true, message: '请选择薪资结构', trigger: 'change' }],
-  workNature: [{ required: true, message: '请选择工作性质', trigger: 'change' }],
-  isUrgent: [{ required: true, message: '请选择是否急聘', trigger: 'change' }],
   workAddress: [{ required: true, message: '请输入工作地点', trigger: 'blur' }],
   workExperience: [{ required: true, message: '请选择经验要求', trigger: 'change' }],
   jobDesc: [{ required: true, message: '请输入岗位描述', trigger: 'blur' }],
@@ -210,13 +169,9 @@ const submitForm = async () => {
     requirement: form.requirement,
     keywords: form.keywords,
     salary: form.salary,
-    salary_structure: form.salaryStructure,
-    work_nature: form.workNature,
-    is_urgent: form.isUrgent,
     work_address: form.workAddress,
     work_experience: form.workExperience,
   };
-  console.log('发布新职位请求', payload);
 
   try {
     const res = await addJob(payload);

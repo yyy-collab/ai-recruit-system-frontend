@@ -4,7 +4,7 @@
       <div>
         <div class="brand">
           <span class="brand-mark">
-            <el-icon><DataAnalysis /></el-icon>
+            <el-icon><Monitor /></el-icon>
           </span>
           <span class="brand-name">{{ brandText }}</span>
         </div>
@@ -62,7 +62,7 @@
         </el-menu>
       </div>
 
-      <el-dropdown trigger="click" @command="handleUserCommand" placement="top-start">
+      <el-dropdown trigger="click" placement="top-start" @command="handleUserCommand">
         <div class="profile-entry">
           <el-avatar :size="26" :src="userStore.userInfo?.avatar_url || defaultAvatar">
             {{ userName.slice(0, 1) }}
@@ -93,15 +93,14 @@ import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useUserStore } from '@/stores/user';
-import { valueOf } from '@/utils/view';
 import {
   ArrowDown,
   Bell,
   Briefcase,
   ChatDotRound,
-  DataAnalysis,
   Document,
   HomeFilled,
+  Monitor,
   Search,
   Setting,
 } from '@element-plus/icons-vue';
@@ -113,6 +112,8 @@ const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726
 
 const activeMenu = computed(() => route.path);
 const settingsPath = computed(() => (userStore.role === 'seeker' ? '/seeker/settings' : '/hr/settings'));
+const brandText = computed(() => 'AI-Hire.');
+
 function readCachedUserInfo() {
   const cached = localStorage.getItem('user_info');
   if (!cached) return {};
@@ -123,15 +124,6 @@ function readCachedUserInfo() {
     return {};
   }
 }
-
-const brandText = computed(() => {
-  const info = userStore.userInfo || readCachedUserInfo();
-  const currentUserLabel = valueOf(
-    info,
-    ['username', 'id', 'user_id', 'userId', 'hr_id', 'hrId', 'seeker_id', 'seekerId'],
-  );
-  return currentUserLabel ? String(currentUserLabel) : 'AI-Hire';
-});
 
 const userName = computed(() => {
   const info = userStore.userInfo || readCachedUserInfo();
@@ -144,15 +136,6 @@ const userName = computed(() => {
     return cachedInfo.real_name || cachedInfo.realName || cachedInfo.username;
   }
 
-  const cached = localStorage.getItem('user_info');
-  if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      return parsed.real_name || parsed.realName || parsed.username || '用户';
-    } catch (error) {
-      return '用户';
-    }
-  }
   return '用户';
 });
 
@@ -181,7 +164,7 @@ async function handleUserCommand(command) {
       ElMessage.success('已退出登录');
       router.push('/role-select');
     } catch (error) {
-      // User cancelled.
+      return;
     }
     return;
   }
@@ -193,7 +176,7 @@ async function handleUserCommand(command) {
         cancelButtonText: '取消',
         inputType: 'password',
         inputPlaceholder: '请输入密码',
-        inputValidator: (value) => Boolean(value) || '密码不能为空',
+        inputValidator: (inputValue) => Boolean(inputValue) || '密码不能为空',
       });
 
       const currentRole = userStore.role;
@@ -239,30 +222,40 @@ async function handleUserCommand(command) {
 }
 
 .brand {
-  height: 58px;
+  min-height: 72px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 20px;
+  gap: 10px;
+  padding: 18px 14px 12px;
+  flex-wrap: nowrap;
 }
 
 .brand-mark {
-  width: 22px;
-  height: 22px;
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  flex: 0 0 auto;
+  border-radius: 10px;
   color: #ffffff;
-  background: #4f46e5;
-  font-size: 15px;
+  background: linear-gradient(180deg, #6558ff 0%, #4f46e5 100%);
+  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.18);
+  font-size: 18px;
+}
+
+.brand-mark :deep(svg) {
+  width: 18px;
+  height: 18px;
 }
 
 .brand-name {
-  font-size: 14px;
-  font-weight: 800;
-  color: #171923;
-  font-style: italic;
+  color: #18213d;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
 }
 
 .side-menu {

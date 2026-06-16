@@ -131,11 +131,37 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value),
 });
 
+function padDatePart(value) {
+  return String(value).padStart(2, '0');
+}
+
+function getDefaultInterviewSchedule() {
+  const nextDay = new Date();
+  nextDay.setDate(nextDay.getDate() + 1);
+
+  return {
+    interview_date: `${nextDay.getFullYear()}-${padDatePart(nextDay.getMonth() + 1)}-${padDatePart(nextDay.getDate())}`,
+    interview_time: '08:00',
+  };
+}
+
+/* function createDefaultForm() {
+  return {
+    ...getDefaultInterviewSchedule(),
+    interview_type: '绾夸笂闈㈣瘯',
+    interview_round: '鍒濊瘯',
+    interview_address: '鑵捐浼氳锛歨ttp://meeting.tencent.com/xxx',
+    contact_name: '',
+    contact_phone: '',
+    remark: '璇锋彁鍓?0鍒嗛挓杩涘叆浼氳锛屽噯澶囪嚜鎴戜粙缁嶅強椤圭洰浣滃搧',
+  };
+} */
+
 const formRef = ref(null);
 const submitting = ref(false);
 const form = reactive({
-  interview_date: '2026-05-12',
-  interview_time: '09:00',
+  interview_date: getDefaultInterviewSchedule().interview_date,
+  interview_time: getDefaultInterviewSchedule().interview_time,
   interview_type: '线上面试',
   interview_round: '初试',
   interview_address: '腾讯会议：http://meeting.tencent.com/xxx',
@@ -170,6 +196,12 @@ const skillTags = computed(() => {
   return [];
 });
 
+function syncScheduleFields() {
+  const schedule = getDefaultInterviewSchedule();
+  form.interview_date = schedule.interview_date;
+  form.interview_time = schedule.interview_time;
+}
+
 watch(
   () => props.candidate,
   (candidate) => {
@@ -179,7 +211,17 @@ watch(
   { immediate: true, deep: true },
 );
 
+watch(
+  () => props.modelValue,
+  (isVisible) => {
+    if (!isVisible) return;
+    syncScheduleFields();
+    formRef.value?.clearValidate();
+  },
+);
+
 function resetForm() {
+  syncScheduleFields();
   formRef.value?.clearValidate();
 }
 

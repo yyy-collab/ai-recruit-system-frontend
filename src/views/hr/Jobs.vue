@@ -2,7 +2,7 @@
   <div class="hr-jobs-page">
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button type="primary" icon="el-icon-plus" @click="goCreateJob">发布新职位</el-button>
+        <el-button type="primary" @click="goCreateJob">发布新职位</el-button>
       </div>
       <div class="toolbar-right">
         <el-input v-model="filters.job_name" placeholder="请输入岗位名称搜索" clearable @clear="handleSearch" @keyup.enter="handleSearch" style="width: 320px; margin-right: 12px;" />
@@ -11,7 +11,7 @@
           <el-option label="已上线" value="1" />
           <el-option label="已下线" value="0" />
         </el-select>
-        <el-button type="primary" icon="el-icon-search" @click="handleSearch">搜索</el-button>
+        <el-button type="primary" @click="handleSearch">搜索</el-button>
       </div>
     </div>
 
@@ -163,7 +163,6 @@ const createTimeOf = (job) => formatDateTimeLoose(jobField(job, ['create_time', 
 const updateTimeOf = (job) => formatDateTimeLoose(jobField(job, ['update_time', 'updateTime']));
 const jobStatusOf = (job) => Number(jobField(job, 'status', 0));
 const jobStatusText = (job) => (jobStatusOf(job) === 1 ? '已上线' : '已下线');
-const jobStatusTagType = (job) => (jobStatusOf(job) === 1 ? 'success' : 'info');
 
 const jobKeywords = (job) => {
   const keywords = jobField(job, 'keywords', '');
@@ -272,6 +271,8 @@ onMounted(loadJobs);
   --page-border: #e6e8f2;
   --page-text: #1f2540;
   --page-subtle: #677489;
+  min-height: 100vh;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -284,13 +285,6 @@ onMounted(loadJobs);
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
-  padding: 22px 24px;
-  border: 1px solid var(--page-border);
-  border-radius: 20px;
-  background:
-    linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(255, 255, 255, 0.96) 34%),
-    #ffffff;
-  box-shadow: 0 16px 36px rgba(31, 37, 64, 0.06);
 }
 
 .toolbar-left {
@@ -349,12 +343,20 @@ onMounted(loadJobs);
 }
 
 .job-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 1px solid var(--page-border);
   border-radius: 20px;
   box-shadow: 0 16px 34px rgba(31, 37, 64, 0.06);
 }
 
 .job-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: 22px 20px 16px;
 }
 
@@ -410,7 +412,8 @@ onMounted(loadJobs);
 .pagination-wrapper {
   display: flex;
   justify-content: flex-end;
-  margin-top: 18px;
+  margin-top: auto;
+  padding-top: 18px;
 }
 
 .pagination-wrapper :deep(.btn-prev),
@@ -520,7 +523,6 @@ onMounted(loadJobs);
 @media (max-width: 900px) {
   .toolbar {
     align-items: stretch;
-    padding: 18px;
   }
 
   .toolbar-right {
