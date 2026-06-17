@@ -97,7 +97,7 @@ h2 {
   justify-content: space-between;
   margin-top: 12px;
 }
-/* 关键：清除el-link的浮动和边距 */
+/* 清除el-link的浮动和边距 */
 .login-links .el-link {
   float: none;
   margin: 0;
