@@ -42,6 +42,19 @@
           批量淘汰
         </el-button>
       </div>
+      <el-select
+        v-model="activeSort"
+        class="sort-select"
+        placeholder="排序方式"
+        @change="handleSortChange"
+      >
+        <el-option
+          v-for="option in sortOptions"
+          :key="option.value"
+          :label="option.label"
+          :value="option.value"
+        />
+      </el-select>
     </div>
 
     <div v-loading="loading" class="candidate-list">
@@ -167,12 +180,18 @@ const statusTabs = [
   { label: '待面试', value: 3 },
 ];
 
-const allDeliveryStatuses = [0, 1, 2, 3];
 const pageSize = 8;
+const jobListPageSize = 200;
+const sortOptions = [
+  { label: '按投递时间排序', value: 'time_desc' },
+  { label: '按匹配度排序', value: 'match_score_desc' },
+  { label: '按姓名排序', value: 'name_asc' },
+];
 
 const jobs = ref([]);
 const selectedJobId = ref();
 const activeStatus = ref(undefined);
+const activeSort = ref('time_desc');
 const deliveries = ref([]);
 const selectedDeliveryIds = ref([]);
 const loading = ref(false);
@@ -233,9 +252,32 @@ onMounted(async () => {
 
 async function fetchJobs() {
   try {
-    const res = await getMyJobList({ pageNum: 1, pageSize: 50, status: 1 });
-    jobs.value = pageItems(res.data);
-    selectedJobId.value = valueOf(jobs.value[0], 'id') || undefined;
+    const previousSelectedJobId = selectedJobId.value;
+    const allJobs = [];
+    let currentPage = 1;
+    let totalJobs = 0;
+
+    do {
+      const res = await getMyJobList({ pageNum: currentPage, pageSize: jobListPageSize });
+      const items = pageItems(res.data);
+      totalJobs = pageTotal(res.data);
+      allJobs.push(...items);
+
+      if (!items.length || allJobs.length >= totalJobs) break;
+      currentPage += 1;
+    } while (currentPage <= 20);
+    jobs.value = allJobs;
+
+    const hasPreviousSelection = allJobs.some(
+      (item) => Number(valueOf(item, 'id')) === Number(previousSelectedJobId),
+    );
+    const firstJobWithDeliveries = allJobs.find(
+      (item) => Number(valueOf(item, ['deliveryCount', 'delivery_count'], 0)) > 0,
+    );
+
+    selectedJobId.value = hasPreviousSelection
+      ? previousSelectedJobId
+      : valueOf(firstJobWithDeliveries || allJobs[0], 'id') || undefined;
   } catch (error) {
     ElMessage.error(error?.msg || '获取岗位失败');
   }
@@ -251,19 +293,15 @@ async function fetchDeliveries() {
 
   loading.value = true;
   try {
-    if (activeStatus.value === undefined) {
-      await fetchAllStatusDeliveries();
-    } else {
-      const res = await getDeliveryList({
-        jobId: selectedJobId.value,
-        pageNum: pageNum.value,
-        pageSize,
-        status: activeStatus.value,
-        sort: 'match_score_desc',
-      });
-      deliveries.value = pageItems(res.data);
-      total.value = pageTotal(res.data);
-    }
+    const res = await getDeliveryList({
+      jobId: selectedJobId.value,
+      pageNum: pageNum.value,
+      pageSize,
+      status: activeStatus.value,
+      sort: activeSort.value,
+    });
+    deliveries.value = pageItems(res.data);
+    total.value = pageTotal(res.data);
 
     selectedDeliveryIds.value = [];
     await backfillMissingMatchScores();
@@ -274,45 +312,6 @@ async function fetchDeliveries() {
   } finally {
     loading.value = false;
   }
-}
-
-async function fetchAllStatusDeliveries() {
-  const results = await Promise.allSettled(
-    allDeliveryStatuses.map((status) => getDeliveryList({
-      jobId: selectedJobId.value,
-      pageNum: 1,
-      pageSize: 200,
-      status,
-      sort: 'match_score_desc',
-    })),
-  );
-
-  const mergedMap = new Map();
-  results.forEach((result) => {
-    if (result.status !== 'fulfilled') return;
-
-    pageItems(result.value.data).forEach((item) => {
-      const deliveryId = deliveryIdOf(item);
-      if (deliveryId === undefined || deliveryId === null) return;
-      mergedMap.set(String(deliveryId), item);
-    });
-  });
-
-  const mergedItems = Array.from(mergedMap.values()).sort((left, right) => {
-    const leftScore = Number(valueOf(left, ['matchScore', 'match_score'], -1));
-    const rightScore = Number(valueOf(right, ['matchScore', 'match_score'], -1));
-    const safeLeftScore = Number.isFinite(leftScore) ? leftScore : -1;
-    const safeRightScore = Number.isFinite(rightScore) ? rightScore : -1;
-    if (safeRightScore !== safeLeftScore) return safeRightScore - safeLeftScore;
-
-    const leftTime = new Date(valueOf(left, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
-    const rightTime = new Date(valueOf(right, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
-    return rightTime - leftTime;
-  });
-
-  total.value = mergedItems.length;
-  const start = (pageNum.value - 1) * pageSize;
-  deliveries.value = mergedItems.slice(start, start + pageSize);
 }
 
 function hasMatchScore(item) {
@@ -362,7 +361,7 @@ async function backfillMissingMatchScores() {
   });
 
   if (hasUpdate) {
-    deliveries.value = [...deliveries.value];
+    deliveries.value = sortCurrentPageItems([...deliveries.value]);
   }
 }
 
@@ -375,10 +374,50 @@ function handlePageChange() {
   fetchDeliveries();
 }
 
+function handleSortChange() {
+  pageNum.value = 1;
+  fetchDeliveries();
+}
+
 function switchStatus(status) {
   activeStatus.value = status;
   pageNum.value = 1;
   fetchDeliveries();
+}
+
+function sortCurrentPageItems(items) {
+  const normalizedItems = [...items];
+
+  if (activeSort.value === 'match_score_desc') {
+    return normalizedItems.sort((left, right) => {
+      const leftScore = Number(valueOf(left, ['matchScore', 'match_score'], -1));
+      const rightScore = Number(valueOf(right, ['matchScore', 'match_score'], -1));
+      const safeLeftScore = Number.isFinite(leftScore) ? leftScore : -1;
+      const safeRightScore = Number.isFinite(rightScore) ? rightScore : -1;
+      if (safeRightScore !== safeLeftScore) return safeRightScore - safeLeftScore;
+
+      const rightTime = new Date(valueOf(right, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+      const leftTime = new Date(valueOf(left, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+      return rightTime - leftTime;
+    });
+  }
+
+  if (activeSort.value === 'name_asc') {
+    return normalizedItems.sort((left, right) => {
+      const compare = candidateNameOf(left).localeCompare(candidateNameOf(right), 'zh-CN');
+      if (compare !== 0) return compare;
+
+      const rightTime = new Date(valueOf(right, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+      const leftTime = new Date(valueOf(left, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+      return rightTime - leftTime;
+    });
+  }
+
+  return normalizedItems.sort((left, right) => {
+    const rightTime = new Date(valueOf(right, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+    const leftTime = new Date(valueOf(left, ['deliveryTime', 'delivery_time'], 0)).getTime() || 0;
+    return rightTime - leftTime;
+  });
 }
 
 function deliveryIdOf(item) {
@@ -795,6 +834,10 @@ async function openResume(item) {
 }
 
 .action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 18px;
 }
 
@@ -802,7 +845,17 @@ async function openResume(item) {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-left: 24px;
+  flex-wrap: wrap;
+}
+
+.sort-select {
+  width: 196px;
+  flex-shrink: 0;
+}
+
+.sort-select :deep(.el-input__wrapper) {
+  height: 40px;
+  border-radius: 8px;
 }
 
 .candidate-list {
@@ -1010,9 +1063,13 @@ async function openResume(item) {
     width: 100%;
   }
 
-  .bulk-actions {
-    margin-left: 0;
-    flex-wrap: wrap;
+  .action-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sort-select {
+    width: 100%;
   }
 
   .candidate-card {

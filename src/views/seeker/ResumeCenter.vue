@@ -273,8 +273,8 @@ async function handleUploadChange(uploadFile) {
 
   if (currentResume.value) {
     try {
-      await ElMessageBox.confirm('当前账号已上传过简历，继续后会直接覆盖当前简历并重新解析。是否继续？', '更新简历', {
-        confirmButtonText: '覆盖更新',
+      await ElMessageBox.confirm('继续后会创建一个新的简历版本，后续投递默认使用最新版本简历。是否继续？', '更新简历', {
+        confirmButtonText: '创建新版本',
         cancelButtonText: '取消',
         type: 'warning',
       });
@@ -286,7 +286,7 @@ async function handleUploadChange(uploadFile) {
   uploading.value = true;
   try {
     await uploadResume(file);
-    ElMessage.success(currentResume.value ? '简历更新成功' : '简历上传成功');
+    ElMessage.success(currentResume.value ? '简历更新成功，已生成新版本' : '简历上传成功');
     await fetchResume();
   } catch (error) {
     ElMessage.error(error?.msg || (currentResume.value ? '更新失败' : '上传失败'));
