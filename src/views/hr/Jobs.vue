@@ -5,8 +5,37 @@
         <el-button type="primary" @click="goCreateJob">发布新职位</el-button>
       </div>
       <div class="toolbar-right">
-        <el-input v-model="filters.job_name" placeholder="请输入岗位名称搜索" clearable @clear="handleSearch" @keyup.enter="handleSearch" style="width: 320px; margin-right: 12px;" />
-        <el-select v-model="filters.status" placeholder="岗位状态" clearable @change="handleSearch" style="width: 160px; margin-right: 12px;">
+        <el-input
+          v-model="filters.job_name"
+          placeholder="请输入岗位名称搜索"
+          clearable
+          class="search-input"
+          @clear="handleSearch"
+          @keyup.enter="handleSearch"
+        />
+        <el-input
+          v-model="filters.salary"
+          placeholder="按薪资搜索"
+          clearable
+          class="search-filter"
+          @clear="handleSearch"
+          @keyup.enter="handleSearch"
+        />
+        <el-input
+          v-model="filters.work_address"
+          placeholder="按工作地点搜索"
+          clearable
+          class="search-filter"
+          @clear="handleSearch"
+          @keyup.enter="handleSearch"
+        />
+        <el-select
+          v-model="filters.status"
+          placeholder="岗位状态"
+          clearable
+          class="status-filter"
+          @change="handleSearch"
+        >
           <el-option label="全部" value="" />
           <el-option label="已上线" value="1" />
           <el-option label="已下线" value="0" />
@@ -16,15 +45,15 @@
     </div>
 
     <div class="summary-panel">
-      <div>总岗位：{{ total }}</div>
-      <div>已上线：{{ onlineCount }}</div>
-      <div>已下线：{{ offlineCount }}</div>
+      <div>总岗位: {{ total }}</div>
+      <div>已上线: {{ onlineCount }}</div>
+      <div>已下线: {{ offlineCount }}</div>
     </div>
 
     <el-card class="job-card" shadow="always">
       <el-table
-        :data="jobs"
         v-loading="loading"
+        :data="jobs"
         stripe
         border
         style="width: 100%;"
@@ -53,7 +82,7 @@
             <el-button type="primary" size="small" @click="toggleStatus(row)">
               {{ jobStatusOf(row) === 1 ? '下线' : '上线' }}
             </el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)" style="margin-left: 8px;">
+            <el-button type="danger" size="small" style="margin-left: 8px;" @click="handleDelete(row)">
               删除
             </el-button>
           </template>
@@ -76,7 +105,7 @@
 
     <el-dialog
       v-model="detailVisible"
-      title="岗位详情"
+      title="职位详情"
       width="760px"
       class="job-detail-dialog"
       align-center
@@ -112,7 +141,7 @@
         </section>
 
         <section class="job-detail-section">
-          <h3>岗位描述</h3>
+          <h3>职位描述</h3>
           <p class="job-detail-text">{{ jobDescOf(activeJob) }}</p>
         </section>
 
@@ -126,10 +155,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { getMyJobList, changeJobStatus, deleteJob } from '@/api/modules/job';
+import { changeJobStatus, deleteJob, getMyJobList } from '@/api/modules/job';
 import { formatDateTimeLoose, valueOf } from '@/utils/view';
 
 const router = useRouter();
@@ -140,6 +169,7 @@ const onlineCount = ref(0);
 const offlineCount = ref(0);
 const detailVisible = ref(false);
 const activeJob = ref(null);
+let detailRefreshTimer = null;
 
 const pagination = reactive({
   pageNum: 1,
@@ -148,6 +178,8 @@ const pagination = reactive({
 
 const filters = reactive({
   job_name: '',
+  salary: '',
+  work_address: '',
   status: '',
 });
 
@@ -157,7 +189,7 @@ const salaryOf = (job) => jobField(job, 'salary', '面议');
 const workAddressOf = (job) => jobField(job, ['work_address', 'workAddress'], '不限地点');
 const workExperienceOf = (job) => jobField(job, ['work_experience', 'workExperience'], '经验不限');
 const deliveryCountOf = (job) => Number(jobField(job, ['delivery_count', 'deliveryCount'], 0) || 0);
-const jobDescOf = (job) => jobField(job, ['job_desc', 'jobDesc'], '暂无岗位描述');
+const jobDescOf = (job) => jobField(job, ['job_desc', 'jobDesc'], '暂无职位描述');
 const requirementOf = (job) => jobField(job, 'requirement', '暂无任职要求');
 const createTimeOf = (job) => formatDateTimeLoose(jobField(job, ['create_time', 'createTime']));
 const updateTimeOf = (job) => formatDateTimeLoose(jobField(job, ['update_time', 'updateTime']));
@@ -167,32 +199,45 @@ const jobStatusText = (job) => (jobStatusOf(job) === 1 ? '已上线' : '已下�
 const jobKeywords = (job) => {
   const keywords = jobField(job, 'keywords', '');
   return String(keywords)
-    .split(/[\s,，/]+/)
-    .map(item => item.trim())
+    .split(/[\s,，、]+/)
+    .map((item) => item.trim())
     .filter(Boolean);
 };
 
-const loadJobs = async () => {
-  loading.value = true;
+const syncActiveJob = (items = jobs.value) => {
+  if (!activeJob.value?.id) return;
+  const latestJob = items.find((item) => Number(item.id) === Number(activeJob.value.id));
+  if (latestJob) {
+    activeJob.value = { ...latestJob };
+  }
+};
+
+const loadJobs = async (options = {}) => {
+  const { silent = false, syncJob = false } = options;
+  if (!silent) loading.value = true;
   try {
     const params = {
       pageNum: pagination.pageNum,
       pageSize: pagination.pageSize,
     };
     if (filters.job_name) params.job_name = filters.job_name;
+    if (filters.salary) params.salary = filters.salary;
+    if (filters.work_address) params.work_address = filters.work_address;
     if (filters.status !== '') params.status = Number(filters.status);
 
     const res = await getMyJobList(params);
-    if (res && res.code === 0) {
+    if (res?.code === 0) {
+      const items = res.data?.items || [];
       total.value = res.data?.total || 0;
-      jobs.value = res.data?.items || [];
-      onlineCount.value = jobs.value.filter(item => item.status === 1).length;
-      offlineCount.value = jobs.value.filter(item => item.status === 0).length;
+      jobs.value = items;
+      onlineCount.value = jobs.value.filter((item) => Number(item.status) === 1).length;
+      offlineCount.value = jobs.value.filter((item) => Number(item.status) === 0).length;
+      if (syncJob) syncActiveJob(items);
     }
   } catch (error) {
-    console.error('加载岗位列表失败', error);
+    console.error('加载职位列表失败', error);
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 };
 
@@ -212,27 +257,44 @@ const handleSizeChange = (size) => {
   loadJobs();
 };
 
-const openJobDetail = (row) => {
+const stopDetailRefresh = () => {
+  if (detailRefreshTimer) {
+    clearInterval(detailRefreshTimer);
+    detailRefreshTimer = null;
+  }
+};
+
+const startDetailRefresh = () => {
+  stopDetailRefresh();
+  if (!activeJob.value?.id) return;
+  detailRefreshTimer = setInterval(() => {
+    loadJobs({ silent: true, syncJob: true });
+  }, 5000);
+};
+
+const openJobDetail = async (row) => {
   activeJob.value = { ...row };
   detailVisible.value = true;
+  await loadJobs({ silent: true, syncJob: true });
+  startDetailRefresh();
 };
 
 const toggleStatus = async (row) => {
   const targetStatus = jobStatusOf(row) === 1 ? 0 : 1;
   try {
     await ElMessageBox.confirm(
-      `确定要将岗位「${jobNameOf(row)}」${targetStatus === 1 ? '上线' : '下线'}吗？`,
+      `确定要将职位“${jobNameOf(row)}”${targetStatus === 1 ? '上线' : '下线'}吗？`,
       '请确认',
-      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' },
     );
     const res = await changeJobStatus({ id: row.id, status: targetStatus });
-    if (res && res.code === 0) {
+    if (res?.code === 0) {
       ElMessage.success('操作成功');
       loadJobs();
     }
-  } catch (err) {
-    if (err !== 'cancel') {
-      console.error(err);
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error(error);
     }
   }
 };
@@ -240,18 +302,18 @@ const toggleStatus = async (row) => {
 const handleDelete = async (row) => {
   try {
     await ElMessageBox.confirm(
-      `确定删除岗位「${jobNameOf(row)}」吗？删除后无法恢复。`,
+      `确定删除职位“${jobNameOf(row)}”吗？删除后无法恢复。`,
       '删除确认',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
     );
     const res = await deleteJob(row.id);
-    if (res && res.code === 0) {
+    if (res?.code === 0) {
       ElMessage.success('删除成功');
       loadJobs();
     }
-  } catch (err) {
-    if (err !== 'cancel') {
-      console.error(err);
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error(error);
     }
   }
 };
@@ -259,6 +321,16 @@ const handleDelete = async (row) => {
 const goCreateJob = () => {
   router.push('/hr/jobs/create');
 };
+
+watch(detailVisible, (visible) => {
+  if (!visible) {
+    stopDetailRefresh();
+  }
+});
+
+onBeforeUnmount(() => {
+  stopDetailRefresh();
+});
 
 onMounted(loadJobs);
 </script>
@@ -298,6 +370,18 @@ onMounted(loadJobs);
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.search-input {
+  width: 320px;
+}
+
+.search-filter {
+  width: 180px;
+}
+
+.status-filter {
+  width: 160px;
 }
 
 .toolbar-right :deep(.el-input__wrapper),
@@ -526,6 +610,12 @@ onMounted(loadJobs);
   }
 
   .toolbar-right {
+    width: 100%;
+  }
+
+  .search-input,
+  .search-filter,
+  .status-filter {
     width: 100%;
   }
 

@@ -8,9 +8,25 @@
       <div class="toolbar-right">
         <el-input
           v-model="filters.keyword"
-          placeholder="请输入岗位、公司或关键词搜索"
+          placeholder="请输入岗位名称搜索"
           clearable
           class="search-input"
+          @clear="handleSearch"
+          @keyup.enter.native="handleSearch"
+        />
+        <el-input
+          v-model="filters.salary"
+          placeholder="按薪资搜索"
+          clearable
+          class="search-filter"
+          @clear="handleSearch"
+          @keyup.enter.native="handleSearch"
+        />
+        <el-input
+          v-model="filters.work_address"
+          placeholder="按工作地点搜索"
+          clearable
+          class="search-filter"
           @clear="handleSearch"
           @keyup.enter.native="handleSearch"
         />
@@ -125,7 +141,11 @@ import { addDelivery, getMyDeliveryList } from '@/api/modules/delivery';
 import { getJobDetail, getSeekerJobList } from '@/api/modules/job';
 import { pageItems, valueOf } from '@/utils/view';
 
-const filters = reactive({ keyword: '' });
+const filters = reactive({
+  keyword: '',
+  salary: '',
+  work_address: '',
+});
 const jobs = ref([]);
 const loading = ref(false);
 const applyingJobId = ref(null);
@@ -243,6 +263,8 @@ const loadJobs = async () => {
   try {
     const params = {};
     if (filters.keyword) params.job_name = filters.keyword;
+    if (filters.salary) params.salary = filters.salary;
+    if (filters.work_address) params.work_address = filters.work_address;
 
     const res = await getSeekerJobList(params);
     const items = res.data?.items || res.data || [];
@@ -398,6 +420,11 @@ onMounted(async () => {
   min-width: 220px;
 }
 
+.search-filter {
+  width: 180px;
+  min-width: 160px;
+}
+
 .search-input :deep(.el-input__wrapper) {
   min-height: 44px;
   border-radius: 14px;
@@ -405,7 +432,18 @@ onMounted(async () => {
   transition: box-shadow 0.2s ease;
 }
 
+.search-filter :deep(.el-input__wrapper) {
+  min-height: 44px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--page-border) inset;
+  transition: box-shadow 0.2s ease;
+}
+
 .search-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--page-accent) inset, 0 0 0 4px rgba(79, 70, 229, 0.12);
+}
+
+.search-filter :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 1px var(--page-accent) inset, 0 0 0 4px rgba(79, 70, 229, 0.12);
 }
 
@@ -634,6 +672,10 @@ onMounted(async () => {
   }
 
   .search-input {
+    width: 100%;
+  }
+
+  .search-filter {
     width: 100%;
   }
 }
