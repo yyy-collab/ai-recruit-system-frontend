@@ -300,8 +300,18 @@ async function fetchDeliveries() {
       status: activeStatus.value,
       sort: activeSort.value,
     });
-    deliveries.value = pageItems(res.data);
-    total.value = pageTotal(res.data);
+    const items = pageItems(res.data);
+    const totalCount = pageTotal(res.data);
+    const lastPage = Math.max(1, Math.ceil(totalCount / pageSize));
+
+    if (totalCount > 0 && pageNum.value > lastPage) {
+      pageNum.value = lastPage;
+      await fetchDeliveries();
+      return;
+    }
+
+    deliveries.value = items;
+    total.value = totalCount;
 
     selectedDeliveryIds.value = [];
     await backfillMissingMatchScores();
@@ -547,19 +557,6 @@ function statusTextOf(item) {
   return map[Number(valueOf(item, 'status'))] || '未知';
 }
 
-function setLocalDeliveryStatus(deliveryId, status) {
-  let changed = false;
-  deliveries.value.forEach((item) => {
-    if (String(deliveryIdOf(item)) !== String(deliveryId)) return;
-    item.status = status;
-    changed = true;
-  });
-
-  if (changed) {
-    deliveries.value = [...deliveries.value];
-  }
-}
-
 function setLocalBatchStatus(deliveryIds, status) {
   const idSet = new Set(deliveryIds.map((id) => String(id)));
   let changed = false;
@@ -573,6 +570,21 @@ function setLocalBatchStatus(deliveryIds, status) {
   if (changed) {
     deliveries.value = [...deliveries.value];
   }
+}
+
+async function syncDeliveriesAfterMutation(deliveryIds, status) {
+  const normalizedIds = [...new Set(
+    (Array.isArray(deliveryIds) ? deliveryIds : [deliveryIds])
+      .filter((id) => id !== undefined && id !== null && id !== '')
+      .map((id) => String(id)),
+  )];
+
+  if (normalizedIds.length) {
+    setLocalBatchStatus(normalizedIds, status);
+    selectedDeliveryIds.value = selectedDeliveryIds.value.filter((id) => !normalizedIds.includes(String(id)));
+  }
+
+  await fetchDeliveries();
 }
 
 async function openInvite(item) {
@@ -620,7 +632,7 @@ async function approve(item) {
   try {
     await updateDeliveryStatus({ delivery_id: deliveryId, status: 1, comment: '' });
     ElMessage.success('已通过候选人');
-    setLocalDeliveryStatus(deliveryId, 1);
+    await syncDeliveriesAfterMutation(deliveryId, 1);
   } catch (error) {
     ElMessage.error(error?.msg || '通过失败');
   }
@@ -644,8 +656,7 @@ async function batchApprove() {
     }
     await batchUpdateDeliveryStatus({ delivery_ids: deliveryIds, status: 1 });
     ElMessage.success('已批量通过候选人');
-    setLocalBatchStatus(deliveryIds, 1);
-    selectedDeliveryIds.value = [];
+    await syncDeliveriesAfterMutation(deliveryIds, 1);
   } catch (error) {
     ElMessage.error(error?.msg || '批量通过失败');
   }
@@ -679,7 +690,7 @@ async function reject(item) {
 
     await updateDeliveryStatus({ delivery_id: deliveryId, status: 2, comment: value.trim() });
     ElMessage.success('已淘汰候选人');
-    setLocalDeliveryStatus(deliveryId, 2);
+    await syncDeliveriesAfterMutation(deliveryId, 2);
   } catch (error) {
     if (error?.message === 'cancel' || error?.message === 'close') return;
     ElMessage.error(error?.msg || '淘汰失败');
@@ -717,23 +728,25 @@ async function batchReject() {
       reject_reason: value.trim(),
     });
     ElMessage.success('已批量淘汰候选人');
-    setLocalBatchStatus(deliveryIds, 2);
-    selectedDeliveryIds.value = [];
+    await syncDeliveriesAfterMutation(deliveryIds, 2);
   } catch (error) {
     if (error?.message === 'cancel' || error?.message === 'close') return;
     ElMessage.error(error?.msg || '批量淘汰失败');
   }
 }
 
-function handleInviteSuccess(payload) {
+async function handleInviteSuccess(payload) {
   const deliveryId = payload?.deliveryId || deliveryIdOf(activeCandidate.value);
-  if (!deliveryId) return;
+  if (!deliveryId) {
+    await fetchDeliveries();
+    return;
+  }
 
   const normalizedId = String(deliveryId);
   if (!sentInviteIds.value.includes(normalizedId)) {
     sentInviteIds.value = [...sentInviteIds.value, normalizedId];
   }
-  setLocalDeliveryStatus(deliveryId, 3);
+  await syncDeliveriesAfterMutation(deliveryId, 3);
 }
 
 function normalizeTextList(value) {

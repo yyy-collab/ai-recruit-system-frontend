@@ -83,6 +83,18 @@
       </div>
     </div>
 
+    <div v-if="total > 0" class="pagination-wrapper">
+      <el-pagination
+        :current-page="pagination.pageNum"
+        :page-size="pagination.pageSize"
+        :page-sizes="[5, 10, 20, 50]"
+        :total="total"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
+
     <el-dialog
       v-model="detailVisible"
       title="岗位详情"
@@ -139,7 +151,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { addDelivery, getMyDeliveryList } from '@/api/modules/delivery';
 import { getJobDetail, getSeekerJobList } from '@/api/modules/job';
-import { pageItems, valueOf } from '@/utils/view';
+import { pageItems, pageTotal, valueOf } from '@/utils/view';
 
 const filters = reactive({
   keyword: '',
@@ -148,11 +160,17 @@ const filters = reactive({
 });
 const jobs = ref([]);
 const loading = ref(false);
+const total = ref(0);
 const applyingJobId = ref(null);
 const appliedJobIds = ref([]);
 const detailVisible = ref(false);
 const detailLoading = ref(false);
 const activeJob = ref(null);
+
+const pagination = reactive({
+  pageNum: 1,
+  pageSize: 10,
+});
 
 const hasAppliedJob = (jobId) => appliedJobIds.value.includes(String(jobId));
 
@@ -261,17 +279,23 @@ const hydrateJobDetails = async (jobList) => {
 const loadJobs = async () => {
   loading.value = true;
   try {
-    const params = {};
+    const params = {
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize,
+    };
     if (filters.keyword) params.job_name = filters.keyword;
     if (filters.salary) params.salary = filters.salary;
     if (filters.work_address) params.work_address = filters.work_address;
 
     const res = await getSeekerJobList(params);
-    const items = res.data?.items || res.data || [];
-    const normalizedJobs = (Array.isArray(items) ? items : [items]).map((item) => normalizeJob(item));
+    const items = pageItems(res.data);
+    total.value = pageTotal(res.data);
+    const normalizedJobs = items.map((item) => normalizeJob(item));
     jobs.value = await hydrateJobDetails(normalizedJobs);
     syncAppliedState();
   } catch (error) {
+    jobs.value = [];
+    total.value = 0;
     console.error('加载求职者岗位列表失败', error);
   } finally {
     loading.value = false;
@@ -284,6 +308,18 @@ const jobKeywords = (job) => {
 };
 
 const handleSearch = () => {
+  pagination.pageNum = 1;
+  loadJobs();
+};
+
+const handlePageChange = (page) => {
+  pagination.pageNum = page;
+  loadJobs();
+};
+
+const handleSizeChange = (size) => {
+  pagination.pageSize = size;
+  pagination.pageNum = 1;
   loadJobs();
 };
 
@@ -659,6 +695,23 @@ onMounted(async () => {
 
 .empty-state {
   padding: 80px 0;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 22px;
+}
+
+.pagination-wrapper :deep(.btn-prev),
+.pagination-wrapper :deep(.btn-next),
+.pagination-wrapper :deep(.el-pager li) {
+  border-radius: 10px;
+}
+
+.pagination-wrapper :deep(.el-pager li.is-active) {
+  background: var(--page-accent);
+  color: #ffffff;
 }
 
 @media (max-width: 900px) {
