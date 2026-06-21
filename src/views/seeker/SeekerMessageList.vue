@@ -109,7 +109,6 @@ import { ElMessage } from 'element-plus';
 import { Search } from '@element-plus/icons-vue';
 import { getMyDeliveryList } from '@/api/modules/delivery';
 import { getSeekerMessageList } from '@/api/modules/interview';
-import { getSeekerJobList } from '@/api/modules/job';
 import MessageDetailDialog from './components/MessageDetailDialog.vue';
 const loading = ref(false);
 const rawMessageList = ref([]);
@@ -224,7 +223,7 @@ async function fetchList() {
         );
         pageNum.value = 1;
       } else {
-        ElMessage.error(deliveryRes.msg || jobRes.msg || '获取投递记录失败');
+        ElMessage.error(deliveryRes.msg || '获取投递记录失败');
       }
       return;
     }
@@ -296,6 +295,7 @@ onMounted(() => {
   font-weight: 800;
   letter-spacing: 0.02em;
 }
+
 .search-wrapper {
   display: flex;
   align-items: center;
@@ -374,7 +374,6 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 14px;
   margin-bottom: 8px;
 }
 .company-name {
@@ -394,8 +393,6 @@ onMounted(() => {
   line-height: 1.8;
 }
 .message-desc {
-  margin: 8px 0;
-  color: #4d5970;
   margin: 6px 0;
   color: #666;
 }

@@ -172,32 +172,57 @@ const avatarFile = ref(null);
 const uploadLoading = ref(false);
 
 // 校验规则：只有真实姓名、电话、邮箱为必填
-const profileRules = {
-  realName: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
-  phone: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { validator: (_, val, cb) => validatePhone(val) ? cb() : cb(new Error('手机号格式不正确')), trigger: 'blur' }
-  ],
-  email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { validator: (_, val, cb) => validateEmail(val) ? cb() : cb(new Error('邮箱格式不正确')), trigger: 'blur' }
-  ],
-  // 学历、求职状态等不再必填
-  age: [
-    {
-      validator: (rule, value, callback) => {
-        // 允许空值
-        if (value === null || value === undefined || value === '') {
-          callback();
-        } else if (typeof value === 'number' && value >= 16 && value <= 65) {
-          callback();
-        } else {
-          callback(new Error('年龄应在16~65之间'));
-        }
-      },
-      trigger: 'blur'
+const profileRules = async () => {
+  try {
+    await profileFormRef.value.validate();
+  } catch {
+    return;
+  }
+  profileLoading.value = true;
+  try {
+    const requestData = {
+      real_name: profileForm.realName,
+      phone: profileForm.phone,
+      email: profileForm.email,
+      age: profileForm.age,
+      address: profileForm.address,
+      edu_back: profileForm.eduBack,
+      alma_mater: profileForm.almaMater,
+      state: profileForm.state,
+      ex_postion: profileForm.exPosition,
+      ex_city: profileForm.exCity,
+      ex_salary_min: profileForm.exSalaryMin,
+      ex_salary_max: profileForm.exSalaryMax,
+    };
+    // 修复：空头像强制赋值null传给后端，避免URL校验报错
+    if (profileForm.avatarUrl && profileForm.avatarUrl.trim() !== '') {
+      requestData.avatar_url = profileForm.avatarUrl;
+    } else {
+      requestData.avatar_url = null;
     }
-  ],
+
+    if (profileForm.eduBack && profileForm.eduBack.trim()) {
+      requestData.edu_back = profileForm.eduBack;
+    }
+    if (profileForm.state && profileForm.state.trim()) {
+      requestData.state = profileForm.state;
+    }
+    const res = await updateSeekerInfo(requestData);
+    if (res.code === 0) {
+      ElMessage.success('信息更新成功');
+      await userStore.fetchUserInfo();
+      // 保存完成重新拉取用户信息，刷新表单头像，切换页面不会消失
+      await fetchUserInfo();
+    } else {
+      ElMessage.error(res.msg || '更新失败');
+      console.error('更新失败响应:', res);
+    }
+  } catch (error) {
+    console.error('保存信息异常:', error);
+    ElMessage.error('保存失败，请稍后重试');
+  } finally {
+    profileLoading.value = false;
+  }
 };
 
 const pwdFormRef = ref();
@@ -266,9 +291,12 @@ const saveProfile = async () => {
       ex_salary_min: profileForm.exSalaryMin,
       ex_salary_max: profileForm.exSalaryMax,
     };
+    // 关键：空值不传 avatar_url 字段，后端不校验这个字段
     if (profileForm.avatarUrl && profileForm.avatarUrl.trim() !== '') {
       requestData.avatar_url = profileForm.avatarUrl;
     }
+    // 不写 else、不赋值 null，不存在该字段就跳过校验
+
     if (profileForm.eduBack && profileForm.eduBack.trim()) {
       requestData.edu_back = profileForm.eduBack;
     }
@@ -279,6 +307,7 @@ const saveProfile = async () => {
     if (res.code === 0) {
       ElMessage.success('信息更新成功');
       await userStore.fetchUserInfo();
+      await fetchUserInfo();
     } else {
       ElMessage.error(res.msg || '更新失败');
       console.error('更新失败响应:', res);

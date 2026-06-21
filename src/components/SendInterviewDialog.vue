@@ -145,23 +145,7 @@ function getDefaultInterviewSchedule() {
   };
 }
 
-/* function createDefaultForm() {
-  return {
-    ...getDefaultInterviewSchedule(),
-    interview_type: '绾夸笂闈㈣瘯',
-    interview_round: '鍒濊瘯',
-    interview_address: '鑵捐浼氳锛歨ttp://meeting.tencent.com/xxx',
-    contact_name: '',
-    contact_phone: '',
-    remark: '璇锋彁鍓?0鍒嗛挓杩涘叆浼氳锛屽噯澶囪嚜鎴戜粙缁嶅強椤圭洰浣滃搧',
-  };
-} */
-
-const formRef = ref(null);
-const submitting = ref(false);
-const form = reactive({
-  interview_date: getDefaultInterviewSchedule().interview_date,
-  interview_time: getDefaultInterviewSchedule().interview_time,
+const DEFAULT_FORM_VALUES = Object.freeze({
   interview_type: '线上面试',
   interview_round: '初试',
   interview_address: '腾讯会议：http://meeting.tencent.com/xxx',
@@ -169,6 +153,23 @@ const form = reactive({
   contact_phone: '',
   remark: '请提前10分钟进入会议，准备自我介绍及项目作品',
 });
+
+function createDefaultForm(candidate = {}) {
+  return {
+    ...getDefaultInterviewSchedule(),
+    ...DEFAULT_FORM_VALUES,
+    contact_name: valueOf(candidate, ['contactName', 'contact_name', 'hrName', 'hr_name'], ''),
+    contact_phone: valueOf(candidate, ['contactPhone', 'contact_phone'], ''),
+  };
+}
+
+function hydrateForm(candidate = props.candidate) {
+  Object.assign(form, createDefaultForm(candidate));
+}
+
+const formRef = ref(null);
+const submitting = ref(false);
+const form = reactive(createDefaultForm());
 
 const rules = {
   interview_date: [{ required: true, message: '请选择面试日期', trigger: 'change' }],
@@ -196,32 +197,27 @@ const skillTags = computed(() => {
   return [];
 });
 
-function syncScheduleFields() {
-  const schedule = getDefaultInterviewSchedule();
-  form.interview_date = schedule.interview_date;
-  form.interview_time = schedule.interview_time;
-}
-
 watch(
   () => props.candidate,
   (candidate) => {
-    form.contact_name = valueOf(candidate, ['contactName', 'contact_name', 'hrName', 'hr_name'], form.contact_name);
-    form.contact_phone = valueOf(candidate, ['contactPhone', 'contact_phone', 'phone'], form.contact_phone);
+    if (!props.modelValue) return;
+    hydrateForm(candidate);
+    formRef.value?.clearValidate();
   },
-  { immediate: true, deep: true },
+  { deep: true },
 );
 
 watch(
   () => props.modelValue,
   (isVisible) => {
     if (!isVisible) return;
-    syncScheduleFields();
+    hydrateForm(props.candidate);
     formRef.value?.clearValidate();
   },
 );
 
 function resetForm() {
-  syncScheduleFields();
+  hydrateForm(props.candidate);
   formRef.value?.clearValidate();
 }
 

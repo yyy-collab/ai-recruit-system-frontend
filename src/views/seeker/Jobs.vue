@@ -8,11 +8,27 @@
       <div class="toolbar-right">
         <el-input
           v-model="filters.keyword"
-          placeholder="请输入岗位、公司或关键词搜索"
+          placeholder="请输入岗位名称搜索"
           clearable
+          class="search-input"
           @clear="handleSearch"
           @keyup.enter.native="handleSearch"
-          class="search-input"
+        />
+        <el-input
+          v-model="filters.salary"
+          placeholder="按薪资搜索"
+          clearable
+          class="search-filter"
+          @clear="handleSearch"
+          @keyup.enter.native="handleSearch"
+        />
+        <el-input
+          v-model="filters.work_address"
+          placeholder="按工作地点搜索"
+          clearable
+          class="search-filter"
+          @clear="handleSearch"
+          @keyup.enter.native="handleSearch"
         />
         <el-button type="primary" @click="handleSearch">搜索</el-button>
       </div>
@@ -67,6 +83,18 @@
       </div>
     </div>
 
+    <div v-if="total > 0" class="pagination-wrapper">
+      <el-pagination
+        :current-page="pagination.pageNum"
+        :page-size="pagination.pageSize"
+        :page-sizes="[5, 10, 20, 50]"
+        :total="total"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
+
     <el-dialog
       v-model="detailVisible"
       title="岗位详情"
@@ -119,25 +147,54 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
+import { addDelivery, getMyDeliveryList } from '@/api/modules/delivery';
 import { getJobDetail, getSeekerJobList } from '@/api/modules/job';
-import { addDelivery } from '@/api/modules/delivery';
-import { valueOf } from '@/utils/view';
+import { pageItems, pageTotal, valueOf } from '@/utils/view';
 
-const filters = reactive({ keyword: '' });
+const filters = reactive({
+  keyword: '',
+  salary: '',
+  work_address: '',
+});
 const jobs = ref([]);
 const loading = ref(false);
+const total = ref(0);
 const applyingJobId = ref(null);
+const appliedJobIds = ref([]);
 const detailVisible = ref(false);
 const detailLoading = ref(false);
 const activeJob = ref(null);
 
+const pagination = reactive({
+  pageNum: 1,
+  pageSize: 10,
+});
+
+const hasAppliedJob = (jobId) => appliedJobIds.value.includes(String(jobId));
+
+const toAppliedFlag = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value > 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', ''].includes(normalized)) return false;
+  }
+  return Boolean(value);
+};
+
 const normalizeJob = (job, detail = {}) => {
   const merged = { ...job, ...detail };
+  const jobId = valueOf(merged, 'id');
+  const isApplied = toAppliedFlag(
+    valueOf(merged, ['is_delivered', 'isDelivered', 'already_delivered', 'has_delivered', 'isApplied'], false),
+  ) || hasAppliedJob(jobId);
+
   return {
     ...merged,
-    id: valueOf(merged, 'id'),
+    id: jobId,
     job_name: valueOf(merged, ['job_name', 'jobName'], '未命名岗位'),
     company_name: valueOf(merged, ['company_name', 'companyName'], '匿名公司'),
     salary: valueOf(merged, 'salary', ''),
@@ -148,16 +205,62 @@ const normalizeJob = (job, detail = {}) => {
     requirement: valueOf(merged, 'requirement', ''),
     hr_name: valueOf(merged, ['hr_name', 'hrName'], ''),
     status: Number(valueOf(merged, 'status', 1)),
-    isApplied: Boolean(valueOf(merged, ['is_delivered', 'isDelivered', 'already_delivered', 'has_delivered', 'isApplied'], false)),
+    isApplied,
+    is_delivered: isApplied,
+    isDelivered: isApplied,
   };
 };
 
+const syncAppliedState = () => {
+  jobs.value = jobs.value.map((job) => {
+    const isApplied = toAppliedFlag(
+      valueOf(job, ['is_delivered', 'isDelivered', 'already_delivered', 'has_delivered', 'isApplied'], false),
+    ) || hasAppliedJob(job.id);
+
+    return {
+      ...job,
+      isApplied,
+      is_delivered: isApplied,
+      isDelivered: isApplied,
+    };
+  });
+
+  if (!activeJob.value) return;
+
+  const isApplied = toAppliedFlag(
+    valueOf(activeJob.value, ['is_delivered', 'isDelivered', 'already_delivered', 'has_delivered', 'isApplied'], false),
+  ) || hasAppliedJob(activeJob.value.id);
+
+  activeJob.value = {
+    ...activeJob.value,
+    isApplied,
+    is_delivered: isApplied,
+    isDelivered: isApplied,
+  };
+};
+
+const loadAppliedJobIds = async () => {
+  try {
+    const res = await getMyDeliveryList({ pageNum: 1, pageSize: 500 });
+    const items = pageItems(res.data);
+    appliedJobIds.value = [...new Set(
+      items
+        .map((item) => valueOf(item, ['jobId', 'job_id']))
+        .filter((jobId) => jobId !== undefined && jobId !== null && jobId !== '')
+        .map((jobId) => String(jobId)),
+    )];
+    syncAppliedState();
+  } catch (error) {
+    console.error('同步已投递岗位状态失败', error);
+  }
+};
+
 const hydrateJobDetails = async (jobList) => {
-  const jobsNeedingDetail = jobList.filter(job => !job.job_desc);
+  const jobsNeedingDetail = jobList.filter((job) => !job.job_desc);
   if (!jobsNeedingDetail.length) return jobList;
 
   const results = await Promise.allSettled(
-    jobsNeedingDetail.map(job => getJobDetail(job.id)),
+    jobsNeedingDetail.map((job) => getJobDetail(job.id)),
   );
 
   const detailMap = new Map();
@@ -166,7 +269,7 @@ const hydrateJobDetails = async (jobList) => {
     detailMap.set(jobsNeedingDetail[index].id, result.value?.data || {});
   });
 
-  return jobList.map(job => (
+  return jobList.map((job) => (
     detailMap.has(job.id)
       ? normalizeJob(job, detailMap.get(job.id))
       : job
@@ -176,13 +279,23 @@ const hydrateJobDetails = async (jobList) => {
 const loadJobs = async () => {
   loading.value = true;
   try {
-    const params = {};
+    const params = {
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize,
+    };
     if (filters.keyword) params.job_name = filters.keyword;
+    if (filters.salary) params.salary = filters.salary;
+    if (filters.work_address) params.work_address = filters.work_address;
+
     const res = await getSeekerJobList(params);
-    const items = res.data?.items || res.data || [];
-    const normalizedJobs = (Array.isArray(items) ? items : [items]).map(item => normalizeJob(item));
+    const items = pageItems(res.data);
+    total.value = pageTotal(res.data);
+    const normalizedJobs = items.map((item) => normalizeJob(item));
     jobs.value = await hydrateJobDetails(normalizedJobs);
+    syncAppliedState();
   } catch (error) {
+    jobs.value = [];
+    total.value = 0;
     console.error('加载求职者岗位列表失败', error);
   } finally {
     loading.value = false;
@@ -191,10 +304,22 @@ const loadJobs = async () => {
 
 const jobKeywords = (job) => {
   if (!job.keywords) return [];
-  return String(job.keywords).split(/[\s,，;；]+/).filter(Boolean).slice(0, 4);
+  return String(job.keywords).split(/[\s,，、]+/).filter(Boolean).slice(0, 4);
 };
 
 const handleSearch = () => {
+  pagination.pageNum = 1;
+  loadJobs();
+};
+
+const handlePageChange = (page) => {
+  pagination.pageNum = page;
+  loadJobs();
+};
+
+const handleSizeChange = (size) => {
+  pagination.pageSize = size;
+  pagination.pageNum = 1;
   loadJobs();
 };
 
@@ -205,6 +330,7 @@ const openJobDetail = async (job) => {
   try {
     const res = await getJobDetail(job.id);
     activeJob.value = normalizeJob(job, res.data || {});
+    syncAppliedState();
   } catch (error) {
     console.error('加载岗位详情失败', error);
     activeJob.value = job;
@@ -213,31 +339,70 @@ const openJobDetail = async (job) => {
   }
 };
 
+const markJobApplied = (jobId) => {
+  const normalizedJobId = String(jobId);
+  if (!appliedJobIds.value.includes(normalizedJobId)) {
+    appliedJobIds.value = [...appliedJobIds.value, normalizedJobId];
+  }
+
+  jobs.value = jobs.value.map((item) => (
+    item.id === jobId
+      ? {
+        ...item,
+        isApplied: true,
+        is_delivered: true,
+        isDelivered: true,
+      }
+      : item
+  ));
+
+  if (activeJob.value?.id === jobId) {
+    activeJob.value = {
+      ...activeJob.value,
+      isApplied: true,
+      is_delivered: true,
+      isDelivered: true,
+    };
+  }
+};
+
 const handleApply = async (job) => {
-  if (job.status !== 1) return;
-  if (job.isApplied) return;
+  if (job.status !== 1 || job.isApplied) return;
 
   applyingJobId.value = job.id;
   try {
     await addDelivery({ jobId: job.id });
-    job.isApplied = true;
-    job.is_delivered = true;
-    job.isDelivered = true;
+    markJobApplied(job.id);
+    await loadAppliedJobIds();
+    await loadJobs();
     ElMessage.success('投递成功，已生成简历投递记录');
   } catch (error) {
     console.error('投递失败', error);
+    await loadAppliedJobIds();
+
+    if (hasAppliedJob(job.id)) {
+      markJobApplied(job.id);
+      await loadJobs();
+      if (error?.code === 10012) {
+        ElMessage.warning('您已投递过该岗位，无需重复投递');
+      }
+      return;
+    }
+
     if (error?.code === 10012) {
       ElMessage.warning('您已投递过该岗位，无需重复投递');
-      job.isApplied = true;
-      job.is_delivered = true;
-      job.isDelivered = true;
+      markJobApplied(job.id);
+      await loadJobs();
     }
   } finally {
     applyingJobId.value = null;
   }
 };
 
-onMounted(loadJobs);
+onMounted(async () => {
+  await loadAppliedJobIds();
+  await loadJobs();
+});
 </script>
 
 <style scoped>
@@ -291,6 +456,11 @@ onMounted(loadJobs);
   min-width: 220px;
 }
 
+.search-filter {
+  width: 180px;
+  min-width: 160px;
+}
+
 .search-input :deep(.el-input__wrapper) {
   min-height: 44px;
   border-radius: 14px;
@@ -298,7 +468,18 @@ onMounted(loadJobs);
   transition: box-shadow 0.2s ease;
 }
 
+.search-filter :deep(.el-input__wrapper) {
+  min-height: 44px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--page-border) inset;
+  transition: box-shadow 0.2s ease;
+}
+
 .search-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--page-accent) inset, 0 0 0 4px rgba(79, 70, 229, 0.12);
+}
+
+.search-filter :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 1px var(--page-accent) inset, 0 0 0 4px rgba(79, 70, 229, 0.12);
 }
 
@@ -516,6 +697,23 @@ onMounted(loadJobs);
   padding: 80px 0;
 }
 
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 22px;
+}
+
+.pagination-wrapper :deep(.btn-prev),
+.pagination-wrapper :deep(.btn-next),
+.pagination-wrapper :deep(.el-pager li) {
+  border-radius: 10px;
+}
+
+.pagination-wrapper :deep(.el-pager li.is-active) {
+  background: var(--page-accent);
+  color: #ffffff;
+}
+
 @media (max-width: 900px) {
   .page-toolbar {
     align-items: stretch;
@@ -527,6 +725,10 @@ onMounted(loadJobs);
   }
 
   .search-input {
+    width: 100%;
+  }
+
+  .search-filter {
     width: 100%;
   }
 }
