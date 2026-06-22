@@ -129,7 +129,14 @@
       <template #header>
         <h2>{{ previewTitle }}</h2>
       </template>
-      <pre>{{ previewText || '暂无可预览内容' }}</pre>
+      <div v-if="previewMode === 'html'" class="preview-frame-wrap">
+        <iframe
+          class="preview-frame"
+          :srcdoc="previewHtml || emptyPreviewHtml"
+          title="原简历预览"
+        ></iframe>
+      </div>
+      <pre v-else>{{ previewText || '暂无可预览内容' }}</pre>
     </el-dialog>
   </div>
 </template>
@@ -158,10 +165,42 @@ const detail = ref(null);
 const previewVisible = ref(false);
 const previewTitle = ref('原简历预览');
 const previewText = ref('');
+const previewHtml = ref('');
+const previewMode = ref('text');
 
 const currentResume = computed(() => resumeList.value[0] || null);
 const resumeParseStatus = computed(() => Number(valueOf(currentResume.value, ['isParsed', 'is_parsed'], 0)));
 const parsedPreviewText = computed(() => valueOf(detail.value, ['previewText', 'preview_text'], ''));
+const emptyPreviewHtml = computed(() => `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      padding: 48px 24px;
+      color: #172033;
+      background: #eef2f7;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+    .empty {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 48px;
+      border-radius: 12px;
+      background: #ffffff;
+      box-shadow: 0 18px 46px rgba(23, 32, 51, 0.12);
+      text-align: center;
+      font-size: 15px;
+      line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="empty">暂无可预览内容</div>
+</body>
+</html>`);
 const canPreviewParsed = computed(() => resumeParseStatus.value === 1);
 const analysis = computed(() => valueOf(detail.value, 'analysis', {}));
 const basicInfo = computed(() => valueOf(analysis.value, ['basicInfo', 'basic_info'], {}));
@@ -297,14 +336,25 @@ async function handleUploadChange(uploadFile) {
 
 async function previewCurrent() {
   const resumeId = valueOf(currentResume.value, ['resumeId', 'resume_id']);
-  if (!resumeId) return;
+  if (!resumeId) {
+    ElMessage.warning('暂无可预览简历');
+    return;
+  }
+
   try {
     const res = await previewResume(resumeId);
     previewTitle.value = '原简历预览';
-    previewText.value = valueOf(res.data, ['previewText', 'preview_text'], '');
+    previewMode.value = 'html';
+    previewText.value = '';
+    const previewHtmlValue = valueOf(res.data, ['previewHtml', 'preview_html'], '');
+    if (!previewHtmlValue) {
+      ElMessage.warning('暂无可预览简历');
+      return;
+    }
+    previewHtml.value = previewHtmlValue || emptyPreviewHtml.value;
     previewVisible.value = true;
   } catch (error) {
-    ElMessage.error(error?.msg || '预览失败');
+    ElMessage.warning(error?.msg || '获取原简历预览失败');
   }
 }
 
@@ -330,7 +380,9 @@ async function previewParsed() {
   }
 
   previewTitle.value = '解析后浏览';
+  previewMode.value = 'text';
   previewText.value = parsedPreviewText.value;
+  previewHtml.value = '';
   previewVisible.value = true;
 }
 
@@ -730,6 +782,20 @@ function polygonPoints(radius) {
   font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.preview-frame-wrap {
+  height: 68vh;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #eef2f7;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #eef2f7;
 }
 
 @media (max-width: 1280px) {
