@@ -23,7 +23,7 @@
           <div class="candidate-meta">
             <strong>{{ candidateName }}</strong>
             <p>应聘岗位：{{ jobName }}</p>
-            <div class="tag-row" v-if="skillTags.length">
+            <div v-if="skillTags.length" class="tag-row">
               <span v-for="tag in skillTags" :key="tag">{{ tag }}</span>
             </div>
           </div>
@@ -46,6 +46,7 @@
               :clearable="false"
             />
           </el-form-item>
+
           <el-form-item label="面试时间" prop="interview_time" required>
             <el-time-picker
               v-model="form.interview_time"
@@ -55,6 +56,7 @@
               :clearable="false"
             />
           </el-form-item>
+
           <div class="form-grid">
             <el-form-item label="面试轮次" prop="interview_round" required>
               <el-select v-model="form.interview_round" placeholder="请选择">
@@ -63,6 +65,7 @@
                 <el-option label="终试" value="终试" />
               </el-select>
             </el-form-item>
+
             <el-form-item label="面试方式" prop="interview_type" required>
               <el-select v-model="form.interview_type" placeholder="请选择">
                 <el-option label="线上面试" value="线上面试" />
@@ -71,17 +74,28 @@
               </el-select>
             </el-form-item>
           </div>
+
           <el-form-item label="面试地点/链接" prop="interview_address" required>
-            <el-input v-model="form.interview_address" placeholder="例如：腾讯会议：http://meeting.tencent.com/xxx" />
+            <el-input
+              v-model="form.interview_address"
+              placeholder="例如：腾讯会议 http://meeting.tencent.com/xxx"
+            />
           </el-form-item>
+
           <div class="form-grid">
             <el-form-item label="联系人" prop="contact_name" required>
-              <el-input v-model="form.contact_name" placeholder="请输入联系人" />
+              <el-input v-model="form.contact_name" placeholder="请输入联系人姓名" />
             </el-form-item>
+
             <el-form-item label="联系电话" prop="contact_phone" required>
-              <el-input v-model="form.contact_phone" placeholder="请输入联系电话" />
+              <el-input
+                v-model="form.contact_phone"
+                maxlength="11"
+                placeholder="请输入11位手机号"
+              />
             </el-form-item>
           </div>
+
           <el-form-item label="备注" prop="remark">
             <el-input
               v-model="form.remark"
@@ -111,6 +125,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Calendar, UserFilled } from '@element-plus/icons-vue';
 import { sendInterview } from '@/api/modules/interview';
+import { validatePhone } from '@/utils/validator';
 import { initials, normalizeTimeForApi, valueOf } from '@/utils/view';
 
 const props = defineProps({
@@ -148,7 +163,7 @@ function getDefaultInterviewSchedule() {
 const DEFAULT_FORM_VALUES = Object.freeze({
   interview_type: '线上面试',
   interview_round: '初试',
-  interview_address: '腾讯会议：http://meeting.tencent.com/xxx',
+  interview_address: '腾讯会议 http://meeting.tencent.com/xxx',
   contact_name: '',
   contact_phone: '',
   remark: '请提前10分钟进入会议，准备自我介绍及项目作品',
@@ -163,13 +178,26 @@ function createDefaultForm(candidate = {}) {
   };
 }
 
+const formRef = ref(null);
+const submitting = ref(false);
+const form = reactive(createDefaultForm());
+
 function hydrateForm(candidate = props.candidate) {
   Object.assign(form, createDefaultForm(candidate));
 }
 
-const formRef = ref(null);
-const submitting = ref(false);
-const form = reactive(createDefaultForm());
+function validateContactPhoneRule(_, value, callback) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized) {
+    callback(new Error('请输入联系电话'));
+    return;
+  }
+  if (!validatePhone(normalized)) {
+    callback(new Error('手机号格式不正确'));
+    return;
+  }
+  callback();
+}
 
 const rules = {
   interview_date: [{ required: true, message: '请选择面试日期', trigger: 'change' }],
@@ -177,21 +205,27 @@ const rules = {
   interview_type: [{ required: true, message: '请选择面试方式', trigger: 'change' }],
   interview_round: [{ required: true, message: '请选择面试轮次', trigger: 'change' }],
   interview_address: [{ required: true, message: '请输入面试地点或链接', trigger: 'blur' }],
-  contact_name: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
-  contact_phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }],
+  contact_name: [{ required: true, message: '请输入联系人姓名', trigger: 'blur' }],
+  contact_phone: [{ validator: validateContactPhoneRule, trigger: 'blur' }],
 };
 
-const candidateName = computed(() => valueOf(props.candidate, ['realName', 'real_name', 'seekerName', 'seeker_name'], '赵志远'));
-const jobName = computed(() => valueOf(props.candidate, ['jobName', 'job_name', 'targetTitle', 'target_title'], '高级前端工程师/AI架构师'));
+const candidateName = computed(() => (
+  valueOf(props.candidate, ['realName', 'real_name', 'seekerName', 'seeker_name'], '候选人')
+));
+
+const jobName = computed(() => (
+  valueOf(props.candidate, ['jobName', 'job_name', 'targetTitle', 'target_title'], '未命名岗位')
+));
+
 const skillTags = computed(() => {
-  const raw = valueOf(props.candidate, ['skills', 'skillTags', 'skill_tags'], ['LLM应用专家', '架构能力强', '英语流利']);
-  if (Array.isArray(raw)) return raw.slice(0, 3);
+  const raw = valueOf(props.candidate, ['skills', 'skillTags', 'skill_tags'], []);
+  if (Array.isArray(raw)) return raw.filter(Boolean).slice(0, 3);
   if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.slice(0, 3);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean).slice(0, 3);
     } catch (error) {
-      return raw.split(/[,，/]/).filter(Boolean).slice(0, 3);
+      return raw.split(/[,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 3);
     }
   }
   return [];
@@ -223,9 +257,17 @@ function resetForm() {
 
 async function submit() {
   await formRef.value?.validate();
+
   const deliveryId = Number(valueOf(props.candidate, ['deliveryId', 'delivery_id']));
   if (!deliveryId) {
     ElMessage.error('缺少投递ID，无法发送面试邀请');
+    return;
+  }
+
+  const contactName = typeof form.contact_name === 'string' ? form.contact_name.trim() : '';
+  const contactPhone = typeof form.contact_phone === 'string' ? form.contact_phone.trim() : '';
+  if (!validatePhone(contactPhone)) {
+    ElMessage.error('手机号格式不正确');
     return;
   }
 
@@ -238,8 +280,8 @@ async function submit() {
       interview_type: form.interview_type,
       interview_round: form.interview_round,
       interview_address: form.interview_address,
-      contact_name: form.contact_name || '林秋雅',
-      contact_phone: form.contact_phone || '13800000000',
+      contact_name: contactName,
+      contact_phone: contactPhone,
       remark: form.remark,
     });
     ElMessage.success('面试邀请已发送');
