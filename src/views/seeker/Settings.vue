@@ -189,7 +189,7 @@ const profileRules = async () => {
       edu_back: profileForm.eduBack,
       alma_mater: profileForm.almaMater,
       state: profileForm.state,
-      ex_postion: profileForm.exPosition,
+      ex_position: profileForm.exPosition,
       ex_city: profileForm.exCity,
       ex_salary_min: profileForm.exSalaryMin,
       ex_salary_max: profileForm.exSalaryMax,
@@ -256,7 +256,7 @@ const fetchUserInfo = async () => {
       profileForm.eduBack = data.edu_back || null;
       profileForm.almaMater = data.alma_mater || '';
       profileForm.state = data.state || null;
-      profileForm.exPosition = data.ex_postion || '';
+      profileForm.exPosition = data.ex_position || '';
       profileForm.exCity = data.ex_city || '';
       profileForm.exSalaryMin = data.ex_salary_min || null;
       profileForm.exSalaryMax = data.ex_salary_max || null;
@@ -286,7 +286,7 @@ const saveProfile = async () => {
       edu_back: profileForm.eduBack,
       alma_mater: profileForm.almaMater,
       state: profileForm.state,
-      ex_postion: profileForm.exPosition,
+      ex_position: profileForm.exPosition,
       ex_city: profileForm.exCity,
       ex_salary_min: profileForm.exSalaryMin,
       ex_salary_max: profileForm.exSalaryMax,
