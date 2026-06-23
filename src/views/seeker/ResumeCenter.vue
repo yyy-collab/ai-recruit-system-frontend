@@ -71,7 +71,7 @@
 
       <section class="right-column">
         <div class="radar-card">
-          <h2>行业人才技能对标（高级产品经理 - 2026）</h2>
+          <h2>行业人才技能对标</h2>
           <div class="radar-wrap">
             <svg viewBox="0 0 360 280" role="img" aria-label="行业人才技能对标雷达图">
               <g transform="translate(180 138)">
@@ -312,8 +312,8 @@ async function handleUploadChange(uploadFile) {
 
   if (currentResume.value) {
     try {
-      await ElMessageBox.confirm('继续后会创建一个新的简历版本，后续投递默认使用最新版本简历。是否继续？', '更新简历', {
-        confirmButtonText: '创建新版本',
+      await ElMessageBox.confirm('当前账号已上传过简历，继续后会直接覆盖当前简历并重新解析。是否继续？', '更新简历', {
+        confirmButtonText: '覆盖更新',
         cancelButtonText: '取消',
         type: 'warning',
       });
@@ -325,7 +325,7 @@ async function handleUploadChange(uploadFile) {
   uploading.value = true;
   try {
     await uploadResume(file);
-    ElMessage.success(currentResume.value ? '简历更新成功，已生成新版本' : '简历上传成功');
+    ElMessage.success(currentResume.value ? '简历更新成功' : '简历上传成功');
     await fetchResume();
   } catch (error) {
     ElMessage.error(error?.msg || (currentResume.value ? '更新失败' : '上传失败'));
