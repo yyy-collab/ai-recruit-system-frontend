@@ -176,26 +176,11 @@ function getDeliveryStatusTagType(status) {
 function deliveryIdOf(item) {
   return item.delivery_id || item.deliveryId;
 }
-function deliveryJobIdOf(item) {
-  return item.job_id || item.jobId;
-}
 function companyNameOf(item) {
   return item.company_name || item.companyName || '匿名公司';
 }
 function jobNameOf(item) {
   return item.job_name || item.jobName || '未命名岗位';
-}
-function jobIdOf(item) {
-  return item.id || item.job_id || item.jobId;
-}
-function isAppliedJob(item) {
-  return Boolean(
-    item.is_delivered
-    || item.isDelivered
-    || item.already_delivered
-    || item.has_delivered
-    || item.isApplied,
-  );
 }
 function formatTime(time) {
   if (!time) return '';
@@ -205,22 +190,10 @@ async function fetchList() {
   loading.value = true;
   try {
     if (isDeliveryView.value) {
-      const [deliveryRes, jobRes] = await Promise.all([
-        getMyDeliveryList({ pageNum: 1, pageSize: 999 }),
-        getSeekerJobList({}),
-      ]);
-      if (deliveryRes.code === 0 && jobRes.code === 0) {
-        const jobItems = jobRes.data?.items || jobRes.data || [];
-        const normalizedJobs = Array.isArray(jobItems) ? jobItems : [jobItems];
-        const appliedJobIds = new Set(
-          normalizedJobs
-            .filter(isAppliedJob)
-            .map((item) => String(jobIdOf(item)))
-            .filter(Boolean),
-        );
-        rawDeliveryList.value = (deliveryRes.data?.items || []).filter((item) =>
-          appliedJobIds.has(String(deliveryJobIdOf(item))),
-        );
+      const deliveryRes = await getMyDeliveryList({ pageNum: 1, pageSize: 999 });
+      if (deliveryRes.code === 0) {
+        const deliveryItems = deliveryRes.data?.items || deliveryRes.data?.list || deliveryRes.data || [];
+        rawDeliveryList.value = Array.isArray(deliveryItems) ? deliveryItems : [deliveryItems];
         pageNum.value = 1;
       } else {
         ElMessage.error(deliveryRes.msg || '获取投递记录失败');
